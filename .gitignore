@@ -24,3 +24,7 @@ Thumbs.db
 
 # Vite
 .vite/
+
+# User uploads
+backend/uploads/
+uploads/
