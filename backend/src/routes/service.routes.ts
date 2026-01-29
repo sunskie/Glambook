@@ -14,6 +14,7 @@ import {
 // Import middleware for authentication and authorization
 import { protect } from '../middleware/auth.middleware';
 import { authorize } from '../middleware/role.middleware';
+import { upload } from '../middleware/upload.middleware';
 
 // ============================================
 // CREATE ROUTER
@@ -97,11 +98,11 @@ router.get(
 // Body: { title, description, price, duration, category }
 router.post(
   '/',
-  protect,                              // Step 1: Must be logged in
-  authorize('vendor'),                  // Step 2: Must be a vendor
-  createService                         // Step 3: Create the service
+  protect,
+  authorize('vendor'),
+  upload.single('image'),  // Add this
+  createService
 );
-
 // ──────────────────────────────────────────────────────────────
 // UPDATE SERVICE
 // ──────────────────────────────────────────────────────────────
@@ -112,9 +113,10 @@ router.post(
 // Body: { price: 60, duration: 45 }
 router.put(
   '/:id',
-  protect,                              // Step 1: Must be logged in
-  authorize('vendor'),                  // Step 2: Must be a vendor
-  updateService                         // Step 3: Update (ownership checked in controller)
+  protect,
+  authorize('vendor'),
+  upload.single('image'),  // Add this
+  updateService
 );
 
 // ──────────────────────────────────────────────────────────────

@@ -4,8 +4,8 @@ import cors from 'cors';
 import connectDB from './config/db';
 import authRoutes from './routes/auth.routes';
 import usersRoutes from './routes/users.routes';
-// ✨ NEW: Import service routes
 import serviceRoutes from './routes/service.routes';
+import path from 'path';
 
 // Load environment variables
 dotenv.config();
@@ -26,6 +26,9 @@ app.use(cors({
 
 // Body parser middleware
 app.use(express.json());
+
+// Serve static files
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // ============================================
 // ROUTES
