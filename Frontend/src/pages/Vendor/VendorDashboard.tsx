@@ -45,15 +45,22 @@ const VendorDashboard: React.FC = () => {
   };
 
   const openDeleteModal = (id: string, title: string) => {
+    console.log('🔵 DELETE BUTTON CLICKED');
+    console.log('Service ID:', id);
+    console.log('Service Title:', title);
+    
     setDeleteModal({
       isOpen: true,
       serviceId: id,
       serviceName: title,
       loading: false,
     });
+    
+    console.log('🔵 Modal state set to open');
   };
 
   const closeDeleteModal = () => {
+    console.log('🔴 CLOSING MODAL');
     setDeleteModal({
       isOpen: false,
       serviceId: '',
@@ -63,14 +70,24 @@ const VendorDashboard: React.FC = () => {
   };
 
   const handleDeleteConfirm = async () => {
+    console.log('🟢 CONFIRM BUTTON CLICKED IN MODAL');
+    console.log('Deleting service:', deleteModal.serviceId);
+    
     setDeleteModal(prev => ({ ...prev, loading: true }));
 
     try {
+      console.log('📤 Calling API...');
       await serviceService.deleteService(deleteModal.serviceId);
+      
+      console.log('✅ API Success - Removing from state');
       setServices(services.filter(s => s._id !== deleteModal.serviceId));
+      
+      console.log('✅ Showing success toast');
       showToast.success('Service deleted successfully!');
+      
       closeDeleteModal();
     } catch (err: any) {
+      console.error('❌ DELETE FAILED:', err);
       showToast.error(err.message || 'Failed to delete service');
       setDeleteModal(prev => ({ ...prev, loading: false }));
     }
@@ -97,140 +114,143 @@ const VendorDashboard: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Vendor Dashboard</h1>
-              <p className="text-sm text-gray-600 mt-1">Welcome back, {user?.name}!</p>
+    <>
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-white shadow-sm border-b">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex justify-between items-center">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Vendor Dashboard</h1>
+                <p className="text-sm text-gray-600 mt-1">Welcome back, {user?.name}!</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => navigate('/vendor/create-service')}
+                  className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+                >
+                  <Plus size={20} />
+                  <span className="hidden sm:inline">Add Service</span>
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-2 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+                >
+                  <LogOut size={20} />
+                  <span className="hidden sm:inline">Logout</span>
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
+          </div>
+        </header>
+
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div className="bg-white p-6 rounded-lg shadow-sm border">
+              <p className="text-gray-600 text-sm font-medium">Total Services</p>
+              <p className="text-3xl font-bold text-gray-900 mt-2">{stats.total}</p>
+            </div>
+            <div className="bg-white p-6 rounded-lg shadow-sm border">
+              <p className="text-gray-600 text-sm font-medium">Active Services</p>
+              <p className="text-3xl font-bold text-green-600 mt-2">{stats.active}</p>
+            </div>
+            <div className="bg-white p-6 rounded-lg shadow-sm border">
+              <p className="text-gray-600 text-sm font-medium">Inactive Services</p>
+              <p className="text-3xl font-bold text-gray-400 mt-2">{stats.inactive}</p>
+            </div>
+          </div>
+
+          <div className="bg-white p-4 rounded-lg shadow-sm border mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                <input
+                  type="text"
+                  placeholder="Search services..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                />
+              </div>
+              <div className="relative">
+                <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                <select
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none appearance-none bg-white"
+                >
+                  {categories.map(cat => (
+                    <option key={cat} value={cat}>
+                      {cat === 'all' ? 'All Categories' : cat}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none appearance-none bg-white"
+                >
+                  <option value="all">All Status</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+              {error}
+            </div>
+          )}
+
+          {loading && (
+            <div className="text-center py-12">
+              <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 border-t-purple-600"></div>
+              <p className="mt-4 text-gray-600">Loading services...</p>
+            </div>
+          )}
+
+          {!loading && filteredServices.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredServices.map(service => (
+                <ServiceCard
+                  key={service._id}
+                  service={service}
+                  onEdit={() => navigate(`/vendor/edit-service/${service._id}`)}
+                  onDelete={() => openDeleteModal(service._id, service.title)}
+                />
+              ))}
+            </div>
+          )}
+
+          {!loading && filteredServices.length === 0 && (
+            <div className="text-center py-12 bg-white rounded-lg border">
+              <div className="text-6xl mb-4">📋</div>
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                {searchTerm || filterCategory !== 'all' || filterStatus !== 'all'
+                  ? 'No services match your filters'
+                  : 'No services yet'}
+              </h3>
+              <p className="text-gray-600 mb-6">
+                {searchTerm || filterCategory !== 'all' || filterStatus !== 'all'
+                  ? 'Try adjusting your search or filters'
+                  : 'Get started by creating your first service'}
+              </p>
               <button
                 onClick={() => navigate('/vendor/create-service')}
-                className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+                className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors inline-flex items-center gap-2"
               >
                 <Plus size={20} />
-                <span className="hidden sm:inline">Add Service</span>
-              </button>
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-2 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
-              >
-                <LogOut size={20} />
-                <span className="hidden sm:inline">Logout</span>
+                Create Your First Service
               </button>
             </div>
-          </div>
-        </div>
-      </header>
+          )}
+        </main>
+      </div>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-lg shadow-sm border">
-            <p className="text-gray-600 text-sm font-medium">Total Services</p>
-            <p className="text-3xl font-bold text-gray-900 mt-2">{stats.total}</p>
-          </div>
-          <div className="bg-white p-6 rounded-lg shadow-sm border">
-            <p className="text-gray-600 text-sm font-medium">Active Services</p>
-            <p className="text-3xl font-bold text-green-600 mt-2">{stats.active}</p>
-          </div>
-          <div className="bg-white p-6 rounded-lg shadow-sm border">
-            <p className="text-gray-600 text-sm font-medium">Inactive Services</p>
-            <p className="text-3xl font-bold text-gray-400 mt-2">{stats.inactive}</p>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-lg shadow-sm border mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-              <input
-                type="text"
-                placeholder="Search services..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-              />
-            </div>
-            <div className="relative">
-              <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-              <select
-                value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none appearance-none bg-white"
-              >
-                {categories.map(cat => (
-                  <option key={cat} value={cat}>
-                    {cat === 'all' ? 'All Categories' : cat}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none appearance-none bg-white"
-              >
-                <option value="all">All Status</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-            {error}
-          </div>
-        )}
-
-        {loading && (
-          <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 border-t-purple-600"></div>
-            <p className="mt-4 text-gray-600">Loading services...</p>
-          </div>
-        )}
-
-        {!loading && filteredServices.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredServices.map(service => (
-              <ServiceCard
-                key={service._id}
-                service={service}
-                onEdit={() => navigate(`/vendor/edit-service/${service._id}`)}
-                onDelete={() => openDeleteModal(service._id, service.title)}
-              />
-            ))}
-          </div>
-        )}
-
-        {!loading && filteredServices.length === 0 && (
-          <div className="text-center py-12 bg-white rounded-lg border">
-            <div className="text-6xl mb-4">📋</div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              {searchTerm || filterCategory !== 'all' || filterStatus !== 'all'
-                ? 'No services match your filters'
-                : 'No services yet'}
-            </h3>
-            <p className="text-gray-600 mb-6">
-              {searchTerm || filterCategory !== 'all' || filterStatus !== 'all'
-                ? 'Try adjusting your search or filters'
-                : 'Get started by creating your first service'}
-            </p>
-            <button
-              onClick={() => navigate('/vendor/create-service')}
-              className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors inline-flex items-center gap-2"
-            >
-              <Plus size={20} />
-              Create Your First Service
-            </button>
-          </div>
-        )}
-      </main>
-
+      {/* Modal OUTSIDE main div */}
       <ConfirmModal
         isOpen={deleteModal.isOpen}
         onClose={closeDeleteModal}
@@ -242,7 +262,7 @@ const VendorDashboard: React.FC = () => {
         type="danger"
         loading={deleteModal.loading}
       />
-    </div>
+    </>
   );
 };
 
