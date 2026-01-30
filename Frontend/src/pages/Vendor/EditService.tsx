@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, DollarSign, Clock, Tag, FileText } from 'lucide-react';
+import { ArrowLeft, Clock, Tag, FileText, Coins } from 'lucide-react';
 import serviceService from '../../services/api/serviceService';
 import { Service } from '../../types';
 import showToast from '../../components/common/Toast';
+import ImageUpload from '../../components/common/ImageUpload';
 
 /**
  * EditService Component
@@ -28,6 +29,8 @@ const EditService: React.FC = () => {
     status: 'active' as 'active' | 'inactive',
   });
 
+  const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingService, setLoadingService] = useState(true);
   const [error, setError] = useState('');
@@ -50,6 +53,10 @@ const EditService: React.FC = () => {
       const response = await serviceService.getServiceById(id!);
       const service = response.data;
 
+      //Debugging to see the imageurl error
+      console.log('Fetched service data:', service);
+      console.log('Image URL:', service.imageUrl);
+
       // Populate form with existing data
       setFormData({
         title: service.title,
@@ -59,6 +66,13 @@ const EditService: React.FC = () => {
         category: service.category,
         status: service.status,
       });
+
+      if (service.imageUrl) {
+        const fullImageUrl = `http://localhost:5000${service.imageUrl}`;
+        console.log('Setting image URL to:', fullImageUrl);
+        setCurrentImageUrl(fullImageUrl);
+}
+      
     } catch (err: any) {
       console.error('Error fetching service:', err);
       setError('Failed to load service. Redirecting...');
@@ -176,6 +190,7 @@ const EditService: React.FC = () => {
         duration: parseInt(formData.duration),
         category: formData.category,
         status: formData.status,
+        image: selectedImage,
       });
 
       showToast.success('Service updated successfully!');
@@ -248,6 +263,13 @@ const EditService: React.FC = () => {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
+
+            {/* Image Upload - ADD THIS */}
+            <ImageUpload 
+            currentImage={currentImageUrl}
+            onImageSelect={setSelectedImage}
+            error={fieldErrors.image}
+            />
             
             {/* Title */}
             <div>
@@ -305,7 +327,7 @@ const EditService: React.FC = () => {
                   Price (NPR) <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
-                  <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                  <Coins className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
                   <input
                     type="number"
                     name="price"
@@ -315,7 +337,7 @@ const EditService: React.FC = () => {
                     placeholder="0.00"
                     step="0.01"
                     min="0"
-                    className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none ${
+                    className={`w-full pl-4 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none ${
                       fieldErrors.price ? 'border-red-500' : 'border-gray-300'
                     }`}
                   />

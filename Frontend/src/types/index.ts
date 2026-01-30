@@ -86,6 +86,7 @@ export interface Service {
   category: string;
   status: 'active' | 'inactive';
   vendorId: string | User;
+  imageUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 }

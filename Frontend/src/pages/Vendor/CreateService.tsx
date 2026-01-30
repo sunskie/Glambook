@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, DollarSign, Clock, Tag, FileText } from 'lucide-react';
+import { ArrowLeft, Coins, Clock, Tag, FileText } from 'lucide-react';
 import serviceService from '../../services/api/serviceService';
 import showToast from '../../components/common/Toast';
+import ImageUpload from '../../components/common/ImageUpload';
 
 /**
  * CreateService Component
@@ -26,6 +27,7 @@ const CreateService: React.FC = () => {
     status: 'active' as 'active' | 'inactive',
   });
 
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<{[key: string]: string}>({});
@@ -142,6 +144,7 @@ const CreateService: React.FC = () => {
         duration: parseInt(formData.duration),
         category: formData.category,
         status: formData.status,
+        image: selectedImage,
       });
 
       showToast.success('Service created successfully!');
@@ -201,6 +204,13 @@ const CreateService: React.FC = () => {
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
             
+            {/* Image Upload */}
+            <ImageUpload
+              currentImage={null}
+              onImageSelect={setSelectedImage}
+              error={fieldErrors.image}
+            />
+
             {/* Title */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -257,7 +267,7 @@ const CreateService: React.FC = () => {
                   Price (NPR) <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
-                  <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                  <Coins className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
                   <input
                     type="number"
                     name="price"

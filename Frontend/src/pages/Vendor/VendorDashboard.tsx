@@ -274,7 +274,31 @@ interface ServiceCardProps {
 
 const ServiceCard: React.FC<ServiceCardProps> = ({ service, onEdit, onDelete }) => {
   return (
-    <div className="bg-white rounded-lg shadow-sm border hover:shadow-md transition-shadow">
+    <div className="bg-white rounded-lg shadow-sm border hover:shadow-md transition-shadow overflow-hidden">
+      
+      {/* Service Image */}
+      <div className="aspect-square w-full bg-gray-100 overflow-hidden">
+        {service.imageUrl ? (
+          <img 
+            src={`http://localhost:5000${service.imageUrl}`}
+            alt={service.title}
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              // Fallback if image fails to load
+              const target = e.currentTarget;
+              target.src = 'https://via.placeholder.com/400x300/e5e7eb/6b7280?text=No+Image';
+            }}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gray-200">
+            <svg className="w-16 h-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </div>
+        )}
+      </div>
+
+      {/* Card Content */}
       <div className="p-6">
         <div className="flex justify-between items-start mb-4">
           <h3 className="text-lg font-semibold text-gray-900 flex-1">{service.title}</h3>
@@ -290,7 +314,7 @@ const ServiceCard: React.FC<ServiceCardProps> = ({ service, onEdit, onDelete }) 
         <div className="space-y-2 mb-4">
           <div className="flex justify-between text-sm">
             <span className="text-gray-600">Price:</span>
-            <span className="font-semibold text-gray-900">${service.price}</span>
+            <span className="font-semibold text-gray-900">Rs.{service.price}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-gray-600">Duration:</span>
