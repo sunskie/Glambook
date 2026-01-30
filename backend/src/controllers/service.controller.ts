@@ -39,7 +39,7 @@ export const createService = async (req: Request, res: Response): Promise<void> 
       category,
       status: status || 'active',
       vendorId,
-      imageUrl,  // ADD IMAGE URL
+      imageUrl,
     });
 
     res.status(201).json({
@@ -69,14 +69,32 @@ export const createService = async (req: Request, res: Response): Promise<void> 
   }
 };
 
+// GET VENDOR'S OWN SERVICES WITH PAGINATION
 export const getMyServices = async (req: Request, res: Response): Promise<void> => {
   try {
     const vendorId = (req as any).user._id;
-    const services = await Service.find({ vendorId }).sort({ createdAt: -1 });
+
+    // PAGINATION PARAMETERS
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 6;
+    const skip = (page - 1) * limit;
+
+    // GET TOTAL COUNT
+    const totalServices = await Service.countDocuments({ vendorId });
+    const totalPages = Math.ceil(totalServices / limit);
+
+    // GET PAGINATED SERVICES
+    const services = await Service.find({ vendorId })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
     res.status(200).json({
       success: true,
       count: services.length,
+      total: totalServices,
+      page,
+      totalPages,
       data: services
     });
 
@@ -90,6 +108,7 @@ export const getMyServices = async (req: Request, res: Response): Promise<void> 
   }
 };
 
+// GET ALL SERVICES WITH FILTERS AND PAGINATION
 export const getAllServices = async (req: Request, res: Response): Promise<void> => {
   try {
     const userRole = (req as any).user.role;
@@ -115,13 +134,28 @@ export const getAllServices = async (req: Request, res: Response): Promise<void>
       if (maxPrice) query.price.$lte = Number(maxPrice);
     }
 
+    // PAGINATION PARAMETERS
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 6;
+    const skip = (page - 1) * limit;
+
+    // GET TOTAL COUNT
+    const totalServices = await Service.countDocuments(query);
+    const totalPages = Math.ceil(totalServices / limit);
+
+    // GET PAGINATED SERVICES
     const services = await Service.find(query)
       .populate('vendorId', 'name email')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
     res.status(200).json({
       success: true,
       count: services.length,
+      total: totalServices,
+      page,
+      totalPages,
       data: services
     });
 

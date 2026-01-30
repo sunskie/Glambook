@@ -1,6 +1,8 @@
 import api from '../../utils/api';
 import { Service } from '../../types';
 
+const SERVICES_PER_PAGE = 2;
+
 interface CreateServiceData {
   title: string;
   description: string;
@@ -30,6 +32,9 @@ interface ServiceResponse {
 interface ServicesResponse {
   success: boolean;
   count: number;
+  total: number;        // ADDED
+  page: number;         // ADDED
+  totalPages: number;   // ADDED
   data: Service[];
 }
 
@@ -72,19 +77,22 @@ class ServiceService {
     }
   }
 
-  async getMyServices(): Promise<ServicesResponse> {
+  // UPDATED: ADDED PAGE PARAMETER
+  async getMyServices(page: number = 1): Promise<ServicesResponse> {
     try {
-      const response = await api.get<ServicesResponse>('/services/my-services');
+      const response = await api.get<ServicesResponse>(`/services/my-services?page=${page}&limit=${SERVICES_PER_PAGE}`);
       return response;
     } catch (error: any) {
       throw new Error(error.response?.data?.message || 'Failed to fetch services');
     }
   }
 
-  async getAllServices(filters?: ServiceFilters): Promise<ServicesResponse> {
+  // UPDATED: ADDED PAGE PARAMETER
+  async getAllServices(filters?: ServiceFilters, page: number = 1): Promise<ServicesResponse> {
     try {
-      const queryString = filters ? new URLSearchParams(filters as any).toString() : '';
-      const url = queryString ? `/services?${queryString}` : '/services';
+      const params: any = { ...filters, page, limit: SERVICES_PER_PAGE };
+      const queryString = new URLSearchParams(params).toString();
+      const url = `/services?${queryString}`;
       
       const response = await api.get<ServicesResponse>(url);
       return response;

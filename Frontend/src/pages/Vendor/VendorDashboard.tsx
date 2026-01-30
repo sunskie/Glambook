@@ -7,6 +7,7 @@ import { Service } from '../../types';
 import showToast from '../../components/common/Toast';
 import ConfirmModal from '../../components/common/ConfirmModal';
 
+const SERVICES_PER_PAGE = 2;     //constant number for the pagination
 const VendorDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
@@ -18,6 +19,11 @@ const VendorDashboard: React.FC = () => {
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   
+  // PAGINATION STATES
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const [totalServices, setTotalServices] = useState<number>(0);
+  
   const [deleteModal, setDeleteModal] = useState({
     isOpen: false,
     serviceId: '',
@@ -26,15 +32,18 @@ const VendorDashboard: React.FC = () => {
   });
 
   useEffect(() => {
-    fetchMyServices();
-  }, []);
+    fetchMyServices(currentPage);
+  }, [currentPage]);
 
-  const fetchMyServices = async () => {
+  const fetchMyServices = async (page: number = 1) => {
     try {
       setLoading(true);
       setError('');
-      const response = await serviceService.getMyServices();
+      const response = await serviceService.getMyServices(page);
       setServices(response.data);
+      setCurrentPage(response.page);
+      setTotalPages(response.totalPages);
+      setTotalServices(response.total);
     } catch (err: any) {
       const errorMsg = err.message || 'Failed to load services';
       setError(errorMsg);
@@ -45,22 +54,15 @@ const VendorDashboard: React.FC = () => {
   };
 
   const openDeleteModal = (id: string, title: string) => {
-    console.log('🔵 DELETE BUTTON CLICKED');
-    console.log('Service ID:', id);
-    console.log('Service Title:', title);
-    
     setDeleteModal({
       isOpen: true,
       serviceId: id,
       serviceName: title,
       loading: false,
     });
-    
-    console.log('🔵 Modal state set to open');
   };
 
   const closeDeleteModal = () => {
-    console.log('🔴 CLOSING MODAL');
     setDeleteModal({
       isOpen: false,
       serviceId: '',
@@ -70,22 +72,20 @@ const VendorDashboard: React.FC = () => {
   };
 
   const handleDeleteConfirm = async () => {
-    console.log('🟢 CONFIRM BUTTON CLICKED IN MODAL');
-    console.log('Deleting service:', deleteModal.serviceId);
-    
     setDeleteModal(prev => ({ ...prev, loading: true }));
 
     try {
-      console.log('📤 Calling API...');
       await serviceService.deleteService(deleteModal.serviceId);
-      
-      console.log('✅ API Success - Removing from state');
       setServices(services.filter(s => s._id !== deleteModal.serviceId));
-      
-      console.log('✅ Showing success toast');
       showToast.success('Service deleted successfully!');
-      
       closeDeleteModal();
+      
+      // REFRESH IF CURRENT PAGE IS NOW EMPTY
+      if (services.length === 1 && currentPage > 1) {
+        setCurrentPage(currentPage - 1);
+      } else {
+        fetchMyServices(currentPage);
+      }
     } catch (err: any) {
       console.error('❌ DELETE FAILED:', err);
       showToast.error(err.message || 'Failed to delete service');
@@ -108,7 +108,7 @@ const VendorDashboard: React.FC = () => {
   const categories = ['all', ...Array.from(new Set(services.map(s => s.category)))];
 
   const stats = {
-    total: services.length,
+    total: totalServices,  // CHANGED: USE TOTAL FROM BACKEND
     active: services.filter(s => s.status === 'active').length,
     inactive: services.filter(s => s.status === 'inactive').length,
   };
@@ -213,16 +213,66 @@ const VendorDashboard: React.FC = () => {
           )}
 
           {!loading && filteredServices.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredServices.map(service => (
-                <ServiceCard
-                  key={service._id}
-                  service={service}
-                  onEdit={() => navigate(`/vendor/edit-service/${service._id}`)}
-                  onDelete={() => openDeleteModal(service._id, service.title)}
-                />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredServices.map(service => (
+                  <ServiceCard
+                    key={service._id}
+                    service={service}
+                    onEdit={() => navigate(`/vendor/edit-service/${service._id}`)}
+                    onDelete={() => openDeleteModal(service._id, service.title)}
+                  />
+                ))}
+              </div>
+
+              {/* PAGINATION CONTROLS */}
+              {totalPages > 1 && (
+                <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+                  {/* Page Info */}
+                  <div className="text-sm text-gray-600">
+                    Showing {((currentPage - 1) * SERVICES_PER_PAGE) + 1} - {Math.min(currentPage * SERVICES_PER_PAGE, totalServices)} of {totalServices} services
+                  </div>
+
+                  {/* Pagination Buttons */}
+                  <div className="flex items-center gap-2">
+                    {/* Previous Button */}
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                      className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Previous
+                    </button>
+
+                    {/* Page Numbers */}
+                    <div className="flex gap-1">
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                        <button
+                          key={page}
+                          onClick={() => setCurrentPage(page)}
+                          className={`w-10 h-10 rounded-lg transition-colors ${
+                            currentPage === page
+                              ? 'bg-purple-600 text-white'
+                              : 'border border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Next Button */}
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages}
+                      className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {!loading && filteredServices.length === 0 && (
@@ -284,7 +334,6 @@ const ServiceCard: React.FC<ServiceCardProps> = ({ service, onEdit, onDelete }) 
             alt={service.title}
             className="w-full h-full object-cover"
             onError={(e) => {
-              // Fallback if image fails to load
               const target = e.currentTarget;
               target.src = 'https://via.placeholder.com/400x300/e5e7eb/6b7280?text=No+Image';
             }}
