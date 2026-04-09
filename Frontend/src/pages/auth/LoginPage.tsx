@@ -1,253 +1,380 @@
+// Frontend/src/pages/auth/LoginPage.tsx
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Lock } from 'lucide-react';
-import InputField from '../../components/auth/InputField';
-import AuthButton from '../../components/auth/AuthButton';
-import authService from '../../services/api/authService';
+import { Mail, Eye, EyeOff, Lock } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
-const loginBg = '/images/login-bg.jpeg';
-
-/**
- * LoginPage Component
- * 
- * LAYOUT:
- * - Desktop: 50% image (left) | 50% form (right)
- * - Mobile: Form only (image hidden)
- * 
- * FEATURES:
- * - Email/Password login
- * - Remember me checkbox
- * - Role-based navigation after login
- * - Error handling with user-friendly messages
- */
-
 const LoginPage: React.FC = () => {
-  const navigate = useNavigate();
-  
-  // ========================================
-  // STATE MANAGEMENT
-  // ========================================
   const [formData, setFormData] = useState({
     email: '',
     password: '',
     rememberMe: false,
   });
+
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const { login } = useAuth();
 
-  // ========================================
-  // EVENT HANDLERS
-  // ========================================
-  
-  /**
-   * Handle input field changes
-   * Supports both text inputs and checkboxes
-   */
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value, type, checked } = e.target;
+    const { name, value, checked, type } = e.target;
     setFormData({
       ...formData,
       [name]: type === 'checkbox' ? checked : value,
     });
-    // Clear error when user starts typing
-    if (error) setError('');
   };
 
-  /**
-   * Handle form submission
-   * Makes API call and navigates based on user role
-   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
     setLoading(true);
+    setError('');
 
     try {
-      // Call your authentication service
-      const response = await authService.login({
-        email: formData.email,
-        password: formData.password,
-      });
-
-      console.log('Login successful:', response);
-
-      // Navigate based on user role
-      if (response.user?.role === 'client') {
-        navigate('/client/dashboard');
-      } else if (response.user?.role === 'vendor') {
-        navigate('/vendor/dashboard');
-      } else if (response.user?.role === 'admin') {
-        navigate('/admin/dashboard');
-      } else {
-        navigate('/');
-      }
-    } catch (err: any) {
-      console.error('Login error:', err);
-      setError(err.message || 'Login failed. Please check your credentials.');
+      await login(formData.email, formData.password);
+    } catch (error: any) {
+      setError(error.message || 'Invalid email or password');
     } finally {
       setLoading(false);
     }
   };
 
-  // ========================================
-  // UI RENDER
-  // ========================================
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row">
+    <div style={{ 
+      minHeight: '100vh', 
+      width: '100vw', 
+      display: 'flex',
+      overflow: 'hidden'
+    }}>
       
-      {/* ============================================
-          LEFT SIDE: IMAGE WITH TEXT OVERLAY
-          ============================================
-          This section is hidden on mobile (hidden)
-          Visible on large screens (lg:flex)
-          Takes 50% width on desktop (lg:w-1/2)
-      */}
-      <div className="hidden lg:flex lg:w-1/2 relative">
-        {/* Background Image */}
-        <div 
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(${loginBg})` }}
-        />
+      {/* ================= LEFT IMAGE SECTION (50%) ================= */}
+      <div style={{ 
+        width: '50%',
+        height: '100vh',
+        position: 'relative', 
+        backgroundImage: 'url(https://images.unsplash.com/photo-1560066984-138dadb4c035?w=800&q=80)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        {/* Dark Overlay */}
+        <div style={{ 
+          position: 'absolute', 
+          top: 0, 
+          left: 0, 
+          right: 0, 
+          bottom: 0, 
+          backgroundColor: 'rgba(28, 28, 28, 0.6)' 
+        }}></div>
         
-        {/* Dark Overlay - Makes text readable */}
-        <div className="absolute inset-0 bg-black bg-opacity-50" />
-        
-        {/* Text Content - Positioned OVER the image */}
-        <div className="relative z-10 flex flex-col justify-center items-start px-16 text-white">
-          <h1 className="text-6xl font-bold mb-4 leading-tight">
+        {/* Text Content - Centered */}
+        <div style={{ 
+          position: 'relative', 
+          zIndex: 10,
+          padding: '0 80px',
+          maxWidth: '600px'
+        }}>
+          <h1 style={{ 
+            color: 'white', 
+            fontSize: '48px', 
+            fontWeight: 600, 
+            lineHeight: '60px', 
+            letterSpacing: '-0.02em',
+            marginBottom: '14px',
+            fontFamily: 'Syne, sans-serif'
+          }}>
             Browse, Book, Grow
           </h1>
-          <p className="text-2xl text-blue-200 font-light">
-            Your All-in-One Beauty<br />
-            Booking & Learning Platform
+          <p style={{ 
+            color: '#89A8E0', 
+            fontSize: '30px', 
+            fontWeight: 600,
+            lineHeight: '1.3',
+            fontFamily: 'Inter, sans-serif'
+          }}>
+            Your All-in-One Beauty Booking & Learning Platform
           </p>
         </div>
       </div>
 
-      {/* ============================================
-          RIGHT SIDE: LOGIN FORM
-          ============================================
-          Full width on mobile (w-full)
-          50% width on desktop (lg:w-1/2)
-          White background with centered content
-      */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center bg-white px-8 py-12">
-        <div className="w-full max-w-md">
+      {/* ================= RIGHT FORM SECTION (50%) ================= */}
+      <div style={{ 
+        width: '50%',
+        height: '100vh',
+        backgroundColor: '#FAFAFA', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        overflowY: 'auto'
+      }}>
+        <div style={{ 
+          width: '100%', 
+          maxWidth: '500px',
+          padding: '0 60px'
+        }}>
           
-          {/* ======================================
-              FORM HEADER
-              ====================================== */}
-          <div className="mb-8">
-            <h2 className="text-4xl font-bold text-gray-900 mb-3">Login</h2>
-            <p className="text-gray-600 text-base leading-relaxed">
-              Welcome back! Please login to your account.
+          {/* Header */}
+          <div style={{ marginBottom: '40px' }}>
+            <h2 style={{ 
+              color: '#111111', 
+              fontSize: '40px', 
+              fontWeight: 600, 
+              lineHeight: '54px', 
+              letterSpacing: '-0.02em',
+              marginBottom: '10px',
+              fontFamily: 'Syne, sans-serif'
+            }}>
+              Login
+            </h2>
+            <p style={{ 
+              color: '#89A8E0', 
+              fontSize: '16px', 
+              fontWeight: 400,
+              lineHeight: '24px',
+              fontFamily: 'Montserrat, sans-serif'
+            }}>
+              Welcome back, we are glad you're feeling beautiful today. Login to continue
             </p>
           </div>
 
-          {/* ======================================
-              ERROR MESSAGE DISPLAY
-              ======================================
-              Only shows when there's an error
-          */}
+          {/* Error Message */}
           {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm flex items-start">
-              <svg className="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-              <span>{error}</span>
+            <div style={{ 
+              width: '100%', 
+              padding: '12px 16px', 
+              backgroundColor: '#FEF2F2', 
+              border: '1px solid #FECACA', 
+              borderRadius: '4px', 
+              color: '#DC2626', 
+              fontSize: '14px', 
+              marginBottom: '20px' 
+            }}>
+              {error}
             </div>
           )}
 
-          {/* ======================================
-              LOGIN FORM
-              ======================================
-              Uses your existing InputField and AuthButton components
-          */}
-          <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Form */}
+          <form onSubmit={handleSubmit}>
             
-            {/* Email Input Field */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email Address
-              </label>
-              <InputField
+            {/* Email Input */}
+            <div style={{ 
+              width: '100%', 
+              height: '56px', 
+              border: '1px solid #111111', 
+              display: 'flex', 
+              alignItems: 'center', 
+              padding: '0 28px', 
+              gap: '10px', 
+              marginBottom: '20px',
+              backgroundColor: 'transparent'
+            }}>
+              <Mail size={24} style={{ color: '#111111', flexShrink: 0 }} />
+              <input
                 type="email"
                 name="email"
-                placeholder="Enter your email"
-                icon={<Mail size={20} />}
                 value={formData.email}
                 onChange={handleChange}
+                placeholder="Email Address"
                 required
+                style={{ 
+                  flex: 1,
+                  backgroundColor: 'transparent',
+                  color: '#111111',
+                  fontSize: '18px',
+                  fontWeight: 500,
+                  lineHeight: '24px',
+                  border: 'none',
+                  outline: 'none',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}
               />
             </div>
 
-            {/* Password Input Field */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Password
-              </label>
-              <InputField
-                type="password"
+            {/* Password Input */}
+            <div style={{ 
+              width: '100%', 
+              height: '56px', 
+              border: '1px solid #111111', 
+              display: 'flex', 
+              alignItems: 'center', 
+              padding: '0 28px', 
+              gap: '10px', 
+              marginBottom: '20px',
+              backgroundColor: 'transparent'
+            }}>
+              <Lock size={24} style={{ color: '#111111', flexShrink: 0 }} />
+              <input
+                type={showPassword ? 'text' : 'password'}
                 name="password"
-                placeholder="Enter your password"
-                icon={<Lock size={20} />}
                 value={formData.password}
                 onChange={handleChange}
+                placeholder="Password"
                 required
+                style={{ 
+                  flex: 1,
+                  backgroundColor: 'transparent',
+                  color: '#111111',
+                  fontSize: '18px',
+                  fontWeight: 500,
+                  lineHeight: '24px',
+                  border: 'none',
+                  outline: 'none',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{ 
+                  color: '#111111', 
+                  flexShrink: 0,
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                {showPassword ? <Eye size={24} /> : <EyeOff size={24} />}
+              </button>
             </div>
 
-            {/* Remember Me Checkbox & Forgot Password */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  name="rememberMe"
-                  id="rememberMe"
-                  checked={formData.rememberMe}
-                  onChange={handleChange}
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                />
-                <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-700">
+            {/* Remember Me & Forgot Password */}
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'space-between', 
+              marginBottom: '40px' 
+            }}>
+              <label style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '10px', 
+                cursor: 'pointer' 
+              }}>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="checkbox"
+                    name="rememberMe"
+                    checked={formData.rememberMe}
+                    onChange={handleChange}
+                    style={{ 
+                      width: '20px',
+                      height: '20px',
+                      borderRadius: '2px',
+                      border: '1.5px solid #111111',
+                      cursor: 'pointer',
+                      appearance: 'none',
+                      backgroundColor: formData.rememberMe ? '#111111' : 'transparent'
+                    }}
+                  />
+                  {formData.rememberMe && (
+                    <svg 
+                      style={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        width: '12px',
+                        height: '12px',
+                        color: 'white',
+                        pointerEvents: 'none'
+                      }}
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </div>
+                <span style={{ 
+                  color: '#111111', 
+                  opacity: 0.7, 
+                  fontSize: '16px', 
+                  fontWeight: 400,
+                  lineHeight: '24px',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
                   Remember me
-                </label>
-              </div>
-              
-              <Link 
-                to="/forgot-password" 
-                className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                </span>
+              </label>
+              <a 
+                href="#" 
+                style={{ 
+                  color: '#89A8E0', 
+                  fontSize: '12px', 
+                  fontWeight: 700,
+                  textDecoration: 'none',
+                  fontFamily: 'Nunito Sans, sans-serif'
+                }}
               >
                 Forgot Password?
-              </Link>
+              </a>
             </div>
 
             {/* Login Button */}
-            <div className="pt-2">
-              <AuthButton 
-                type="submit" 
-                loading={loading} 
-                disabled={loading}
-              >
+            <button
+              type="submit"
+              disabled={loading}
+              style={{ 
+                width: '100%', 
+                height: '56px', 
+                backgroundColor: '#111111', 
+                borderRadius: '2px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: 'none',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                opacity: loading ? 0.5 : 1,
+                marginBottom: '32px',
+                transition: 'background-color 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#000000'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#111111'}
+            >
+              <span style={{ 
+                color: '#89A8E0', 
+                fontSize: '18px', 
+                fontWeight: 600,
+                lineHeight: '28px',
+                letterSpacing: '-0.01em',
+                fontFamily: 'Montserrat, sans-serif'
+              }}>
                 {loading ? 'Logging in...' : 'Login'}
-              </AuthButton>
+              </span>
+            </button>
+
+            {/* Register Link */}
+            <div style={{ textAlign: 'center' }}>
+              <span style={{ 
+                color: '#111111', 
+                fontSize: '18px', 
+                fontWeight: 400,
+                lineHeight: '28px',
+                letterSpacing: '-0.01em',
+                fontFamily: 'Montserrat, sans-serif'
+              }}>
+                Don't have an account?{' '}
+              </span>
+              <a 
+                href="/register" 
+                style={{ 
+                  color: '#89A8E0', 
+                  fontSize: '18px', 
+                  fontWeight: 600,
+                  lineHeight: '28px',
+                  letterSpacing: '-0.01em',
+                  textDecoration: 'underline',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}
+              >
+                Register
+              </a>
             </div>
           </form>
-
-          {/* ======================================
-              REGISTER LINK
-              ======================================
-              Directs users without an account to register
-          */}
-          <p className="text-center text-gray-600 text-sm mt-8">
-            Don't have an account?{' '}
-            <Link 
-              to="/register" 
-              className="text-blue-600 hover:text-blue-800 font-semibold transition-colors"
-            >
-              Register here
-            </Link>
-          </p>
         </div>
       </div>
     </div>

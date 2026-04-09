@@ -8,7 +8,9 @@ export interface IService extends Document {
   category: string;
   status: 'active' | 'inactive';
   vendorId: mongoose.Types.ObjectId;
-  imageUrl: string | null;  // ADD THIS
+  imageUrl: string | null;
+  rating: number;
+  reviewCount: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -70,14 +72,23 @@ const ServiceSchema = new Schema<IService>(
       ref: 'User',
       required: [true, 'Vendor ID is required']
     },
-    // IMAGE URL FIELD
     imageUrl: {
       type: String,
       default: null,
-    }
+    },
+    rating: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5,
+    },
+    reviewCount: {
+      type: Number,
+      default: 0,
+    },
   },
   {
-    timestamps: true
+    timestamps: true,
   }
 );
 

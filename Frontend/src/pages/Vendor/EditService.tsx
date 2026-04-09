@@ -67,10 +67,11 @@ const EditService: React.FC = () => {
         status: service.status,
       });
 
-      if (service.imageUrl) {
-        const fullImageUrl = `http://localhost:5000${service.imageUrl}`;
-        console.log('Setting image URL to:', fullImageUrl);
-        setCurrentImageUrl(fullImageUrl);
+if (service.imageUrl) {
+  const fullImageUrl = service.imageUrl.startsWith('http') 
+    ? service.imageUrl 
+    : `http://localhost:5000${service.imageUrl}`;
+  setCurrentImageUrl(fullImageUrl);
 }
       
     } catch (err: any) {

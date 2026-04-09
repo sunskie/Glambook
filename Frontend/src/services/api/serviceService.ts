@@ -1,7 +1,6 @@
+// Frontend/src/services/api/serviceService.ts
 import api from '../../utils/api';
 import { Service } from '../../types';
-
-const SERVICES_PER_PAGE = 2;
 
 interface CreateServiceData {
   title: string;
@@ -32,9 +31,9 @@ interface ServiceResponse {
 interface ServicesResponse {
   success: boolean;
   count: number;
-  total: number;        // ADDED
-  page: number;         // ADDED
-  totalPages: number;   // ADDED
+  total: number;
+  page: number;
+  totalPages: number;
   data: Service[];
 }
 
@@ -48,98 +47,83 @@ interface ServiceFilters {
   status?: string;
   minPrice?: number;
   maxPrice?: number;
+  search?: string;
 }
 
 class ServiceService {
   async createService(data: CreateServiceData): Promise<ServiceResponse> {
-    try {
-      const formData = new FormData();
-      formData.append('title', data.title);
-      formData.append('description', data.description);
-      formData.append('price', data.price.toString());
-      formData.append('duration', data.duration.toString());
-      formData.append('category', data.category);
-      if (data.status) {
-        formData.append('status', data.status);
-      }
-      if (data.image) {
-        formData.append('image', data.image);
-      }
-
-      const response = await api.post<ServiceResponse>('/services', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-      return response;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to create service');
+    const formData = new FormData();
+    formData.append('title', data.title);
+    formData.append('description', data.description);
+    formData.append('price', data.price.toString());
+    formData.append('duration', data.duration.toString());
+    formData.append('category', data.category);
+    if (data.status) {
+      formData.append('status', data.status);
     }
+    if (data.image) {
+      formData.append('image', data.image);
+    }
+
+    const response: any = await api.post('/services', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    
+    return response;
   }
 
-  // UPDATED: ADDED PAGE PARAMETER
   async getMyServices(page: number = 1): Promise<ServicesResponse> {
-    try {
-      const response = await api.get<ServicesResponse>(`/services/my-services?page=${page}&limit=${SERVICES_PER_PAGE}`);
-      return response;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to fetch services');
-    }
+    const response: any = await api.get(`/services/my-services?page=${page}&limit=6`);
+    return response;
   }
 
-  // UPDATED: ADDED PAGE PARAMETER
   async getAllServices(filters?: ServiceFilters, page: number = 1): Promise<ServicesResponse> {
-    try {
-      const params: any = { ...filters, page, limit: SERVICES_PER_PAGE };
-      const queryString = new URLSearchParams(params).toString();
-      const url = `/services?${queryString}`;
-      
-      const response = await api.get<ServicesResponse>(url);
-      return response;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to fetch services');
-    }
+    const params: any = { ...filters, page, limit: 9 };
+    
+    // Remove undefined values
+    Object.keys(params).forEach(key => {
+      if (params[key] === undefined || params[key] === null || params[key] === '') {
+        delete params[key];
+      }
+    });
+    
+    const queryString = new URLSearchParams(params).toString();
+    const url = `/services${queryString ? `?${queryString}` : ''}`;
+    
+    const response: any = await api.get(url);
+    return response;
   }
 
   async getServiceById(id: string): Promise<ServiceResponse> {
-    try {
-      const response = await api.get<ServiceResponse>(`/services/${id}`);
-      return response;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to fetch service');
-    }
+    const response: any = await api.get(`/services/${id}`);
+    return response;
   }
 
   async updateService(id: string, data: UpdateServiceData): Promise<ServiceResponse> {
-    try {
-      const formData = new FormData();
-      
-      if (data.title) formData.append('title', data.title);
-      if (data.description) formData.append('description', data.description);
-      if (data.price) formData.append('price', data.price.toString());
-      if (data.duration) formData.append('duration', data.duration.toString());
-      if (data.category) formData.append('category', data.category);
-      if (data.status) formData.append('status', data.status);
-      if (data.image) formData.append('image', data.image);
+    const formData = new FormData();
+    
+    if (data.title) formData.append('title', data.title);
+    if (data.description) formData.append('description', data.description);
+    if (data.price !== undefined) formData.append('price', data.price.toString());
+    if (data.duration !== undefined) formData.append('duration', data.duration.toString());
+    if (data.category) formData.append('category', data.category);
+    if (data.status) formData.append('status', data.status);
+    if (data.image) formData.append('image', data.image);
 
-      const response = await api.put<ServiceResponse>(`/services/${id}`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-      return response;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to update service');
-    }
+    const response: any = await api.put(`/services/${id}`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    
+    return response;
   }
 
   async deleteService(id: string): Promise<DeleteResponse> {
-    try {
-      const response = await api.delete<DeleteResponse>(`/services/${id}`);
-      return response;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to delete service');
-    }
+    const response: any = await api.delete(`/services/${id}`);
+    return response;
   }
 }
 

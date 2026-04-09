@@ -1,396 +1,1157 @@
+// Frontend/src/pages/Vendor/VendorDashboard.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, LogOut, Search, Filter } from 'lucide-react';
+import { 
+  Plus, Search, Bell, MessageCircle, DollarSign, 
+  Calendar, Users, Settings, RefreshCw, BookOpen,
+  TrendingUp, Clock, MoreHorizontal, ArrowRight
+} from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import serviceService from '../../services/api/serviceService';
-import { Service } from '../../types';
+import vendorBookingService from '../../services/api/vendorBookingService';
+import courseService from '../../services/api/courseService';
 import showToast from '../../components/common/Toast';
-import ConfirmModal from '../../components/common/ConfirmModal';
 
-const SERVICES_PER_PAGE = 2;     //constant number for the pagination
 const VendorDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-
-  const [services, setServices] = useState<Service[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string>('');
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [filterCategory, setFilterCategory] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
   
-  // PAGINATION STATES
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [totalPages, setTotalPages] = useState<number>(1);
-  const [totalServices, setTotalServices] = useState<number>(0);
-  
-  const [deleteModal, setDeleteModal] = useState({
-    isOpen: false,
-    serviceId: '',
-    serviceName: '',
-    loading: false,
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    todayEarnings: 0,
+    pendingApprovals: 0,
+    activeStudents: 0
   });
+  const [recentBookings, setRecentBookings] = useState<any[]>([]);
+  const [myCourses, setMyCourses] = useState<any[]>([]);
 
   useEffect(() => {
-    fetchMyServices(currentPage);
-  }, [currentPage]);
+    fetchDashboardData();
+  }, []);
 
-  const fetchMyServices = async (page: number = 1) => {
+  const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      setError('');
-      const response = await serviceService.getMyServices(page);
-      setServices(response.data);
-      setCurrentPage(response.page);
-      setTotalPages(response.totalPages);
-      setTotalServices(response.total);
-    } catch (err: any) {
-      const errorMsg = err.message || 'Failed to load services';
-      setError(errorMsg);
-      showToast.error(errorMsg);
+      const [bookingStatsRes, bookingsRes, coursesRes] = await Promise.all([
+        vendorBookingService.getBookingStats(),
+        vendorBookingService.getVendorBookings({}),
+        courseService.getMyCourses(),
+      ]);
+      const bookings = bookingsRes.data || [];
+      const courses = coursesRes.data || [];
+      const bStats = bookingStatsRes.data || {};
+      setStats({
+        todayEarnings: bookings.filter((b: any) => b.status === 'completed').reduce((sum: number, b: any) => sum + (b.totalPrice || 0), 0),
+        pendingApprovals: bStats.pending || 0,
+        activeStudents: courses.reduce((sum: number, c: any) => sum + (c.enrollmentCount || 0), 0),
+      });
+      setRecentBookings(bookings.slice(0, 5));
+      setMyCourses(courses);
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const openDeleteModal = (id: string, title: string) => {
-    setDeleteModal({
-      isOpen: true,
-      serviceId: id,
-      serviceName: title,
-      loading: false,
-    });
-  };
-
-  const closeDeleteModal = () => {
-    setDeleteModal({
-      isOpen: false,
-      serviceId: '',
-      serviceName: '',
-      loading: false,
-    });
-  };
-
-  const handleDeleteConfirm = async () => {
-    setDeleteModal(prev => ({ ...prev, loading: true }));
-
-    try {
-      await serviceService.deleteService(deleteModal.serviceId);
-      setServices(services.filter(s => s._id !== deleteModal.serviceId));
-      showToast.success('Service deleted successfully!');
-      closeDeleteModal();
-      
-      // REFRESH IF CURRENT PAGE IS NOW EMPTY
-      if (services.length === 1 && currentPage > 1) {
-        setCurrentPage(currentPage - 1);
-      } else {
-        fetchMyServices(currentPage);
-      }
-    } catch (err: any) {
-      console.error('❌ DELETE FAILED:', err);
-      showToast.error(err.message || 'Failed to delete service');
-      setDeleteModal(prev => ({ ...prev, loading: false }));
-    }
-  };
-
-  const handleLogout = () => {
-    logout();
-  };
-
-  const filteredServices = services.filter(service => {
-    const matchesSearch = service.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         service.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = filterCategory === 'all' || service.category === filterCategory;
-    const matchesStatus = filterStatus === 'all' || service.status === filterStatus;
-    return matchesSearch && matchesCategory && matchesStatus;
-  });
-
-  const categories = ['all', ...Array.from(new Set(services.map(s => s.category)))];
-
-  const stats = {
-    total: totalServices,  // CHANGED: USE TOTAL FROM BACKEND
-    active: services.filter(s => s.status === 'active').length,
-    inactive: services.filter(s => s.status === 'inactive').length,
-  };
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#f8f9fc'
+      }}>
+        <div style={{
+          width: '48px',
+          height: '48px',
+          border: '4px solid #e2e4f0',
+          borderTopColor: '#5B62B3',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }} />
+      </div>
+    );
+  }
 
   return (
-    <>
-      <div className="min-h-screen bg-gray-50">
-        <header className="bg-white shadow-sm border-b">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex justify-between items-center">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Vendor Dashboard</h1>
-                <p className="text-sm text-gray-600 mt-1">Welcome back, {user?.name}!</p>
+    <div style={{ 
+      display: 'flex', 
+      minHeight: '100vh', 
+      backgroundColor: '#f8f9fc',
+      fontFamily: 'Montserrat, sans-serif'
+    }}>
+      {/* Sidebar */}
+      <aside style={{
+        width: '288px',
+        backgroundColor: 'white',
+        borderRight: '1px solid #e2e8f0',
+        height: '100vh',
+        position: 'sticky',
+        top: 0,
+        display: 'flex',
+        flexDirection: 'column'
+      }}>
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          gap: '32px', 
+          padding: '24px',
+          height: '100%'
+        }}>
+          {/* Logo */}
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '12px',
+            padding: '0 8px'
+          }}>
+            <div style={{
+              width: '40px',
+              height: '40px',
+              backgroundColor: '#5B62B3',
+              borderRadius: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'white'
+            }}>
+              <span style={{ fontSize: '24px' }}>💎</span>
+            </div>
+            <div>
+              <h1 style={{
+                color: '#5B62B3',
+                fontSize: '20px',
+                fontWeight: 700,
+                margin: 0,
+                lineHeight: 1.2
+              }}>
+                GlamBook
+              </h1>
+              <p style={{
+                color: '#94a3b8',
+                fontSize: '10px',
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                margin: 0
+              }}>
+                Vendor Excellence
+              </p>
+            </div>
+          </div>
+
+          {/* Navigation */}
+          <nav style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '6px',
+            flex: 1
+          }}>
+            <button
+              onClick={() => navigate('/vendor/dashboard')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '12px 16px',
+                borderRadius: '12px',
+                backgroundColor: 'rgba(91, 98, 179, 0.1)',
+                color: '#5B62B3',
+                fontWeight: 600,
+                fontSize: '14px',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                textAlign: 'left',
+                width: '100%'
+              }}
+            >
+              <TrendingUp size={20} />
+              Dashboard
+            </button>
+
+            <button
+              onClick={() => navigate('/vendor/bookings')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '12px 16px',
+                borderRadius: '12px',
+                backgroundColor: 'transparent',
+                color: '#64748b',
+                fontWeight: 500,
+                fontSize: '14px',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                textAlign: 'left',
+                width: '100%'
+              }}
+            >
+              <Calendar size={20} />
+              Bookings
+            </button>
+
+            <button
+              onClick={() => navigate('/vendor/my-courses')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '12px 16px',
+                borderRadius: '12px',
+                backgroundColor: 'transparent',
+                color: '#64748b',
+                fontWeight: 500,
+                fontSize: '14px',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                textAlign: 'left',
+                width: '100%'
+              }}
+            >
+              <BookOpen size={20} />
+              Academy
+            </button>
+
+            <button
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '12px 16px',
+                borderRadius: '12px',
+                backgroundColor: 'transparent',
+                color: '#64748b',
+                fontWeight: 500,
+                fontSize: '14px',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                textAlign: 'left',
+                width: '100%'
+              }}
+            >
+              <DollarSign size={20} />
+              Earnings
+            </button>
+
+            <button
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '12px 16px',
+                borderRadius: '12px',
+                backgroundColor: 'transparent',
+                color: '#64748b',
+                fontWeight: 500,
+                fontSize: '14px',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                textAlign: 'left',
+                width: '100%'
+              }}
+            >
+              <Users size={20} />
+              Customers
+            </button>
+
+            {/* Bottom section */}
+            <div style={{
+              marginTop: 'auto',
+              paddingTop: '16px',
+              borderTop: '1px solid #f1f5f9',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px'
+            }}>
+              <button
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  backgroundColor: 'transparent',
+                  color: '#64748b',
+                  fontWeight: 500,
+                  fontSize: '14px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  textAlign: 'left',
+                  width: '100%'
+                }}
+              >
+                <Settings size={20} />
+                Settings
+              </button>
+
+              <button
+                onClick={() => navigate('/client/dashboard')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  backgroundColor: 'transparent',
+                  color: '#5B62B3',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  textAlign: 'left',
+                  width: '100%'
+                }}
+              >
+                <RefreshCw size={20} />
+                User View
+              </button>
+            </div>
+          </nav>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main style={{ 
+        flex: 1, 
+        display: 'flex', 
+        flexDirection: 'column',
+        minWidth: 0
+      }}>
+        {/* Top Bar */}
+        <header style={{
+          height: '80px',
+          backgroundColor: 'white',
+          borderBottom: '1px solid #e2e8f0',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 32px',
+          position: 'sticky',
+          top: 0,
+          zIndex: 10
+        }}>
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '16px',
+            flex: 1 
+          }}>
+            <div style={{ position: 'relative', maxWidth: '448px', width: '100%' }}>
+              <Search size={20} style={{
+                position: 'absolute',
+                left: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: '#94a3b8'
+              }} />
+              <input
+                type="text"
+                placeholder="Search appointments, students, or analytics..."
+                style={{
+                  width: '100%',
+                  backgroundColor: '#f8fafc',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '10px 16px 10px 40px',
+                  fontSize: '14px',
+                  outline: 'none',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}
+              />
+            </div>
+          </div>
+
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '24px' 
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button style={{
+                position: 'relative',
+                padding: '8px',
+                color: '#64748b',
+                backgroundColor: 'transparent',
+                border: 'none',
+                borderRadius: '50%',
+                cursor: 'pointer'
+              }}>
+                <Bell size={24} />
+                <span style={{
+                  position: 'absolute',
+                  top: '8px',
+                  right: '8px',
+                  width: '8px',
+                  height: '8px',
+                  backgroundColor: '#ef4444',
+                  borderRadius: '50%',
+                  border: '2px solid white'
+                }} />
+              </button>
+
+              <button style={{
+                padding: '8px',
+                color: '#64748b',
+                backgroundColor: 'transparent',
+                border: 'none',
+                borderRadius: '50%',
+                cursor: 'pointer'
+              }}>
+                <MessageCircle size={24} />
+              </button>
+            </div>
+
+            <div style={{
+              width: '1px',
+              height: '32px',
+              backgroundColor: '#e2e8f0'
+            }} />
+
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '12px',
+              paddingLeft: '8px'
+            }}>
+              <button
+                onClick={logout}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: 'transparent',
+                  color: '#5B62B3',
+                  border: '1px solid #5B62B3',
+                  borderRadius: '12px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}
+              >
+                Logout
+              </button>
+              <div style={{ textAlign: 'right' }}>
+                <p style={{
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  margin: 0,
+                  lineHeight: 1,
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                  {user?.name || 'Vendor'}
+                </p>
+                <p style={{
+                  fontSize: '11px',
+                  color: '#94a3b8',
+                  fontWeight: 500,
+                  margin: '4px 0 0 0',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                  Lead Educator
+                </p>
               </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => navigate('/vendor/create-service')}
-                  className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
-                >
-                  <Plus size={20} />
-                  <span className="hidden sm:inline">Add Service</span>
-                </button>
-                <button
-                  onClick={handleLogout}
-                  className="flex items-center gap-2 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
-                >
-                  <LogOut size={20} />
-                  <span className="hidden sm:inline">Logout</span>
-                </button>
-              </div>
+              <div style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '12px',
+                backgroundColor: '#cbd5e1',
+                boxShadow: '0 4px 20px -2px rgba(91, 98, 179, 0.08)'
+              }} />
             </div>
           </div>
         </header>
 
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-white p-6 rounded-lg shadow-sm border">
-              <p className="text-gray-600 text-sm font-medium">Total Services</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">{stats.total}</p>
-            </div>
-            <div className="bg-white p-6 rounded-lg shadow-sm border">
-              <p className="text-gray-600 text-sm font-medium">Active Services</p>
-              <p className="text-3xl font-bold text-green-600 mt-2">{stats.active}</p>
-            </div>
-            <div className="bg-white p-6 rounded-lg shadow-sm border">
-              <p className="text-gray-600 text-sm font-medium">Inactive Services</p>
-              <p className="text-3xl font-bold text-gray-400 mt-2">{stats.inactive}</p>
-            </div>
-          </div>
-
-          <div className="bg-white p-4 rounded-lg shadow-sm border mb-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                <input
-                  type="text"
-                  placeholder="Search services..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-                />
-              </div>
-              <div className="relative">
-                <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                <select
-                  value={filterCategory}
-                  onChange={(e) => setFilterCategory(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none appearance-none bg-white"
-                >
-                  {categories.map(cat => (
-                    <option key={cat} value={cat}>
-                      {cat === 'all' ? 'All Categories' : cat}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <select
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none appearance-none bg-white"
-                >
-                  <option value="all">All Status</option>
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-              {error}
-            </div>
-          )}
-
-          {loading && (
-            <div className="text-center py-12">
-              <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 border-t-purple-600"></div>
-              <p className="mt-4 text-gray-600">Loading services...</p>
-            </div>
-          )}
-
-          {!loading && filteredServices.length > 0 && (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredServices.map(service => (
-                  <ServiceCard
-                    key={service._id}
-                    service={service}
-                    onEdit={() => navigate(`/vendor/edit-service/${service._id}`)}
-                    onDelete={() => openDeleteModal(service._id, service.title)}
-                  />
-                ))}
-              </div>
-
-              {/* PAGINATION CONTROLS */}
-              {totalPages > 1 && (
-                <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-                  {/* Page Info */}
-                  <div className="text-sm text-gray-600">
-                    Showing {((currentPage - 1) * SERVICES_PER_PAGE) + 1} - {Math.min(currentPage * SERVICES_PER_PAGE, totalServices)} of {totalServices} services
-                  </div>
-
-                  {/* Pagination Buttons */}
-                  <div className="flex items-center gap-2">
-                    {/* Previous Button */}
-                    <button
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                      disabled={currentPage === 1}
-                      className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      Previous
-                    </button>
-
-                    {/* Page Numbers */}
-                    <div className="flex gap-1">
-                      {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                        <button
-                          key={page}
-                          onClick={() => setCurrentPage(page)}
-                          className={`w-10 h-10 rounded-lg transition-colors ${
-                            currentPage === page
-                              ? 'bg-purple-600 text-white'
-                              : 'border border-gray-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          {page}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Next Button */}
-                    <button
-                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                      disabled={currentPage === totalPages}
-                      className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          {!loading && filteredServices.length === 0 && (
-            <div className="text-center py-12 bg-white rounded-lg border">
-              <div className="text-6xl mb-4">📋</div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                {searchTerm || filterCategory !== 'all' || filterStatus !== 'all'
-                  ? 'No services match your filters'
-                  : 'No services yet'}
-              </h3>
-              <p className="text-gray-600 mb-6">
-                {searchTerm || filterCategory !== 'all' || filterStatus !== 'all'
-                  ? 'Try adjusting your search or filters'
-                  : 'Get started by creating your first service'}
+        {/* Dashboard Content */}
+        <div style={{ 
+          padding: '32px', 
+          display: 'flex', 
+          flexDirection: 'column', 
+          gap: '32px' 
+        }}>
+          {/* Welcome Section */}
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'flex-end' 
+          }}>
+            <div>
+              <h2 style={{
+                fontSize: '30px',
+                fontWeight: 800,
+                color: '#111111',
+                margin: 0,
+                fontFamily: 'Montserrat, sans-serif'
+              }}>
+                Good morning, {user?.name?.split(' ')[0] || 'Vendor'}
+              </h2>
+              <p style={{
+                color: '#64748b',
+                marginTop: '4px',
+                fontWeight: 500,
+                fontFamily: 'Montserrat, sans-serif'
+              }}>
+                Your salon and academy performance is up 12% this week.
               </p>
-              <button
-                onClick={() => navigate('/vendor/create-service')}
-                className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors inline-flex items-center gap-2"
-              >
-                <Plus size={20} />
-                Create Your First Service
-              </button>
             </div>
-          )}
-        </main>
-      </div>
 
-      {/* Modal OUTSIDE main div */}
-      <ConfirmModal
-        isOpen={deleteModal.isOpen}
-        onClose={closeDeleteModal}
-        onConfirm={handleDeleteConfirm}
-        title="Delete Service"
-        message={`Are you sure you want to delete "${deleteModal.serviceName}"? This action cannot be undone.`}
-        confirmText="Delete"
-        cancelText="Cancel"
-        type="danger"
-        loading={deleteModal.loading}
-      />
-    </>
-  );
-};
-
-interface ServiceCardProps {
-  service: Service;
-  onEdit: () => void;
-  onDelete: () => void;
-}
-
-const ServiceCard: React.FC<ServiceCardProps> = ({ service, onEdit, onDelete }) => {
-  return (
-    <div className="bg-white rounded-lg shadow-sm border hover:shadow-md transition-shadow overflow-hidden">
-      
-      {/* Service Image */}
-      <div className="aspect-square w-full bg-gray-100 overflow-hidden">
-        {service.imageUrl ? (
-          <img 
-            src={`http://localhost:5000${service.imageUrl}`}
-            alt={service.title}
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              const target = e.currentTarget;
-              target.src = 'https://via.placeholder.com/400x300/e5e7eb/6b7280?text=No+Image';
-            }}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gray-200">
-            <svg className="w-16 h-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
+            <button
+              onClick={() => navigate('/vendor/create-service')}
+              style={{
+                backgroundColor: '#5B62B3',
+                color: 'white',
+                padding: '10px 20px',
+                borderRadius: '12px',
+                fontWeight: 700,
+                fontSize: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                boxShadow: '0 4px 20px -2px rgba(91, 98, 179, 0.08)',
+                fontFamily: 'Montserrat, sans-serif'
+              }}
+            >
+              <Plus size={18} />
+              New Service
+            </button>
           </div>
-        )}
-      </div>
 
-      {/* Card Content */}
-      <div className="p-6">
-        <div className="flex justify-between items-start mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 flex-1">{service.title}</h3>
-          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-            service.status === 'active' 
-              ? 'bg-green-100 text-green-800' 
-              : 'bg-gray-100 text-gray-800'
-          }`}>
-            {service.status}
-          </span>
+          {/* Metric Cards */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: '24px'
+          }}>
+            {/* Today's Earnings */}
+            <div style={{
+              backgroundColor: 'white',
+              padding: '24px',
+              borderRadius: '24px',
+              boxShadow: '0 4px 20px -2px rgba(91, 98, 179, 0.08)',
+              border: '1px solid #f1f5f9'
+            }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                marginBottom: '16px'
+              }}>
+                <div style={{
+                  padding: '12px',
+                  backgroundColor: '#ecfdf5',
+                  color: '#10b981',
+                  borderRadius: '12px'
+                }}>
+                  <DollarSign size={24} />
+                </div>
+                <span style={{
+                  color: '#10b981',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  backgroundColor: '#ecfdf5',
+                  padding: '4px 8px',
+                  borderRadius: '8px',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                  +12.4%
+                </span>
+              </div>
+              <p style={{
+                color: '#64748b',
+                fontSize: '12px',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                margin: 0,
+                fontFamily: 'Montserrat, sans-serif'
+              }}>
+                Today's Earnings
+              </p>
+              <h3 style={{
+                fontSize: '24px',
+                fontWeight: 800,
+                marginTop: '4px',
+                fontFamily: 'Montserrat, sans-serif'
+              }}>
+                Rs. {stats.todayEarnings.toLocaleString()}
+              </h3>
+            </div>
+
+            {/* Pending Approvals */}
+            <div style={{
+              backgroundColor: 'white',
+              padding: '24px',
+              borderRadius: '24px',
+              boxShadow: '0 4px 20px -2px rgba(91, 98, 179, 0.08)',
+              border: '1px solid #f1f5f9'
+            }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                marginBottom: '16px'
+              }}>
+                <div style={{
+                  padding: '12px',
+                  backgroundColor: '#fef3c7',
+                  color: '#f59e0b',
+                  borderRadius: '12px'
+                }}>
+                  <Clock size={24} />
+                </div>
+                <span style={{
+                  color: '#94a3b8',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                  Attention needed
+                </span>
+              </div>
+              <p style={{
+                color: '#64748b',
+                fontSize: '12px',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                margin: 0,
+                fontFamily: 'Montserrat, sans-serif'
+              }}>
+                Pending Approvals
+              </p>
+              <h3 style={{
+                fontSize: '24px',
+                fontWeight: 800,
+                marginTop: '4px',
+                fontFamily: 'Montserrat, sans-serif'
+              }}>
+                {stats.pendingApprovals}
+              </h3>
+            </div>
+
+            {/* Active Students */}
+            <div style={{
+              backgroundColor: 'white',
+              padding: '24px',
+              borderRadius: '24px',
+              boxShadow: '0 4px 20px -2px rgba(91, 98, 179, 0.08)',
+              border: '1px solid #f1f5f9'
+            }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                marginBottom: '16px'
+              }}>
+                <div style={{
+                  padding: '12px',
+                  backgroundColor: 'rgba(91, 98, 179, 0.1)',
+                  color: '#5B62B3',
+                  borderRadius: '12px'
+                }}>
+                  <BookOpen size={24} />
+                </div>
+                <span style={{
+                  color: '#5B62B3',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  backgroundColor: 'rgba(91, 98, 179, 0.1)',
+                  padding: '4px 8px',
+                  borderRadius: '8px',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                  +5%
+                </span>
+              </div>
+              <p style={{
+                color: '#64748b',
+                fontSize: '12px',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                margin: 0,
+                fontFamily: 'Montserrat, sans-serif'
+              }}>
+                Active Students
+              </p>
+              <h3 style={{
+                fontSize: '24px',
+                fontWeight: 800,
+                marginTop: '4px',
+                fontFamily: 'Montserrat, sans-serif'
+              }}>
+                {stats.activeStudents}
+              </h3>
+            </div>
+          </div>
+
+          {/* Schedule at a Glance */}
+          <div>
+            <h3 style={{
+              fontSize: '18px',
+              fontWeight: 700,
+              marginBottom: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontFamily: 'Montserrat, sans-serif'
+            }}>
+              <Calendar size={20} style={{ color: '#5B62B3' }} />
+              Schedule at a Glance
+            </h3>
+
+            <div style={{
+              display: 'flex',
+              gap: '16px',
+              overflowX: 'auto',
+              paddingBottom: '16px'
+            }}>
+              {/* Slot 1 */}
+              <div style={{
+                minWidth: '280px',
+                backgroundColor: 'white',
+                padding: '20px',
+                borderRadius: '24px',
+                borderLeft: '4px solid #5B62B3',
+                boxShadow: '0 4px 20px -2px rgba(91, 98, 179, 0.08)'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '12px'
+                }}>
+                  <span style={{
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    color: '#5B62B3',
+                    backgroundColor: 'rgba(91, 98, 179, 0.1)',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    fontFamily: 'Montserrat, sans-serif'
+                  }}>
+                    09:00 AM
+                  </span>
+                  <MoreHorizontal size={18} style={{ color: '#cbd5e1' }} />
+                </div>
+                <h4 style={{
+                  fontWeight: 700,
+                  fontSize: '14px',
+                  margin: 0,
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                  Bridal Makeup Trial
+                </h4>
+                <p style={{
+                  fontSize: '12px',
+                  color: '#64748b',
+                  marginTop: '4px',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                  Priya Sharma • Studio A
+                </p>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginTop: '16px'
+                }}>
+                  <div style={{
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '50%',
+                    backgroundColor: '#cbd5e1'
+                  }} />
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    color: '#94a3b8',
+                    fontFamily: 'Montserrat, sans-serif'
+                  }}>
+                    Paid Rs. 1,500 deposit
+                  </span>
+                </div>
+              </div>
+
+              {/* Slot 2 */}
+              <div style={{
+                minWidth: '280px',
+                backgroundColor: 'white',
+                padding: '20px',
+                borderRadius: '24px',
+                borderLeft: '4px solid #e2e8f0',
+                boxShadow: '0 4px 20px -2px rgba(91, 98, 179, 0.08)'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '12px'
+                }}>
+                  <span style={{
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    color: '#64748b',
+                    backgroundColor: '#f1f5f9',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    fontFamily: 'Montserrat, sans-serif'
+                  }}>
+                    11:30 AM
+                  </span>
+                  <MoreHorizontal size={18} style={{ color: '#cbd5e1' }} />
+                </div>
+                <h4 style={{
+                  fontWeight: 700,
+                  fontSize: '14px',
+                  margin: 0,
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                  Advanced Color Theory
+                </h4>
+                <p style={{
+                  fontSize: '12px',
+                  color: '#64748b',
+                  marginTop: '4px',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                  Academy Group B • Hall 1
+                </p>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginTop: '16px'
+                }}>
+                  <div style={{ display: 'flex', marginLeft: '-8px' }}>
+                    <div style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '50%',
+                      backgroundColor: '#cbd5e1',
+                      border: '2px solid white',
+                      marginLeft: '-8px'
+                    }} />
+                    <div style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '50%',
+                      backgroundColor: '#cbd5e1',
+                      border: '2px solid white',
+                      marginLeft: '-8px'
+                    }} />
+                    <div style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '50%',
+                      backgroundColor: '#cbd5e1',
+                      border: '2px solid white',
+                      marginLeft: '-8px'
+                    }} />
+                  </div>
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    color: '#94a3b8',
+                    fontFamily: 'Montserrat, sans-serif'
+                  }}>
+                    12 Students joined
+                  </span>
+                </div>
+              </div>
+
+              {/* Slot 3 */}
+              <div style={{
+                minWidth: '280px',
+                backgroundColor: 'white',
+                padding: '20px',
+                borderRadius: '24px',
+                borderLeft: '4px solid #5B62B3',
+                boxShadow: '0 4px 20px -2px rgba(91, 98, 179, 0.08)',
+                opacity: 0.75
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '12px'
+                }}>
+                  <span style={{
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    color: '#64748b',
+                    backgroundColor: '#f1f5f9',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    fontFamily: 'Montserrat, sans-serif'
+                  }}>
+                    02:00 PM
+                  </span>
+                  <MoreHorizontal size={18} style={{ color: '#cbd5e1' }} />
+                </div>
+                <h4 style={{
+                  fontWeight: 700,
+                  fontSize: '14px',
+                  margin: 0,
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                  Dermalogica Facial
+                </h4>
+                <p style={{
+                  fontSize: '12px',
+                  color: '#64748b',
+                  marginTop: '4px',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                  Ananya Iyer • Treatment Room 2
+                </p>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginTop: '16px'
+                }}>
+                  <div style={{
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '50%',
+                    backgroundColor: '#cbd5e1'
+                  }} />
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    color: '#94a3b8',
+                    fontFamily: 'Montserrat, sans-serif'
+                  }}>
+                    Awaiting confirmation
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Latest Bookings & Academy Progress */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '2fr 1fr',
+            gap: '32px'
+          }}>
+            {/* Latest Bookings Table */}
+            <div style={{
+              backgroundColor: 'white',
+              borderRadius: '24px',
+              boxShadow: '0 4px 20px -2px rgba(91, 98, 179, 0.08)',
+              border: '1px solid #f1f5f9',
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              <div style={{
+                padding: '24px',
+                borderBottom: '1px solid #f1f5f9',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <h3 style={{
+                  fontWeight: 700,
+                  margin: 0,
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                  Latest Bookings
+                </h3>
+                <button style={{
+                  color: '#5B62B3',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontFamily: 'Montserrat, sans-serif'
+                }}>
+                  View All
+                </button>
+              </div>
+
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ 
+                  width: '100%', 
+                  textAlign: 'left',
+                  borderCollapse: 'collapse'
+                }}>
+                  <thead style={{ backgroundColor: '#f8fafc' }}>
+                    <tr>
+                      <th style={{
+                        padding: '16px 24px',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        color: '#94a3b8',
+                        letterSpacing: '0.05em',
+                        fontFamily: 'Montserrat, sans-serif'
+                      }}>
+                        Customer
+                      </th>
+                      <th style={{
+                        padding: '16px 24px',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        color: '#94a3b8',
+                        letterSpacing: '0.05em',
+                        fontFamily: 'Montserrat, sans-serif'
+                      }}>
+                        Service
+                      </th>
+                      <th style={{
+                        padding: '16px 24px',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        color: '#94a3b8',
+                        letterSpacing: '0.05em',
+                        fontFamily: 'Montserrat, sans-serif'
+                      }}>
+                        Amount
+                      </th>
+                      <th style={{
+                        padding: '16px 24px',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        color: '#94a3b8',
+                        letterSpacing: '0.05em',
+                        fontFamily: 'Montserrat, sans-serif'
+                      }}>
+                        Status
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody style={{ 
+                    borderTop: '1px solid #f1f5f9'
+                  }}>
+                    {recentBookings.length === 0 ? (
+                      <tr><td colSpan={4} style={{padding:'32px', textAlign:'center', color:'#94a3b8', fontFamily:'Montserrat, sans-serif'}}>No bookings yet</td></tr>
+                    ) : recentBookings.map((booking: any) => (
+                      <tr key={booking._id} style={{borderBottom:'1px solid #f1f5f9'}}>
+                        <td style={{padding:'16px 24px'}}>
+                          <div style={{display:'flex', alignItems:'center', gap:'12px'}}>
+                            <div style={{width:'32px', height:'32px', borderRadius:'8px', backgroundColor:'#5B62B3', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:700, color:'white'}}>
+                              {booking.clientName?.charAt(0) || 'C'}
+                            </div>
+                            <div>
+                              <p style={{fontSize:'14px', fontWeight:700, margin:0, fontFamily:'Montserrat, sans-serif'}}>{booking.clientName}</p>
+                              <p style={{fontSize:'10px', color:'#94a3b8', margin:0, fontFamily:'Montserrat, sans-serif'}}>{booking.clientEmail}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{padding:'16px 24px', fontSize:'14px', fontWeight:500, fontFamily:'Montserrat, sans-serif'}}>{booking.serviceId?.title || 'Service'}</td>
+                        <td style={{padding:'16px 24px', fontSize:'14px', fontWeight:700, fontFamily:'Montserrat, sans-serif'}}>Rs. {booking.totalPrice?.toLocaleString()}</td>
+                        <td style={{padding:'16px 24px'}}>
+                          <span style={{padding:'4px 10px', borderRadius:'9999px', fontSize:'10px', fontWeight:700, textTransform:'uppercase', fontFamily:'Montserrat, sans-serif',
+                            backgroundColor: booking.status==='completed'?'#ecfdf5':booking.status==='confirmed'?'#eff6ff':booking.status==='cancelled'?'#fef2f2':'#fffbeb',
+                            color: booking.status==='completed'?'#10b981':booking.status==='confirmed'?'#3b82f6':booking.status==='cancelled'?'#ef4444':'#f59e0b'}}>
+                            {booking.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Academy Progress */}
+            <div style={{
+              backgroundColor: 'white',
+              borderRadius: '24px',
+              boxShadow: '0 4px 20px -2px rgba(91, 98, 179, 0.08)',
+              border: '1px solid #f1f5f9',
+              padding: '24px'
+            }}>
+              <h3 style={{
+                fontWeight: 700,
+                marginBottom: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontFamily: 'Montserrat, sans-serif'
+              }}>
+                Academy Progress
+                <BookOpen size={20} style={{ color: '#cbd5e1' }} />
+              </h3>
+
+              <div style={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: '24px' 
+              }}>
+                {myCourses.length === 0 ? (
+                  <div style={{textAlign:'center', padding:'32px', color:'#94a3b8', fontFamily:'Montserrat, sans-serif'}}>No courses yet</div>
+                ) : myCourses.map((course: any) => (
+                  <div key={course._id}>
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px'}}>
+                      <p style={{fontSize:'14px', fontWeight:700, margin:0, fontFamily:'Montserrat, sans-serif'}}>{course.title}</p>
+                      <span style={{fontSize:'12px', fontWeight:500, color:'#94a3b8', fontFamily:'Montserrat, sans-serif'}}>{course.status}</span>
+                    </div>
+                    <div style={{width:'100%', backgroundColor:'#f1f5f9', height:'8px', borderRadius:'9999px', overflow:'hidden'}}>
+                      <div style={{backgroundColor:'#5B62B3', height:'100%', width:`${Math.min((course.enrollmentCount||0)*10,100)}%`, borderRadius:'9999px'}} />
+                    </div>
+                    <p style={{fontSize:'10px', color:'#94a3b8', marginTop:'8px', fontFamily:'Montserrat, sans-serif'}}>{course.enrollmentCount||0} students enrolled</p>
+                  </div>
+                ))}
+
+                <button
+                  onClick={() => navigate('/vendor/my-courses')}
+                  style={{
+                    marginTop: '16px',
+                    width: '100%',
+                    border: '1px solid #e2e8f0',
+                    color: '#64748b',
+                    padding: '12px',
+                    borderRadius: '12px',
+                    fontWeight: 700,
+                    fontSize: '12px',
+                    backgroundColor: 'transparent',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    transition: 'all 0.2s',
+                    fontFamily: 'Montserrat, sans-serif'
+                  }}
+                >
+                  Manage Curriculum
+                  <ArrowRight size={14} />
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-        <p className="text-gray-600 text-sm mb-4 line-clamp-2">{service.description}</p>
-        <div className="space-y-2 mb-4">
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Price:</span>
-            <span className="font-semibold text-gray-900">Rs.{service.price}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Duration:</span>
-            <span className="font-semibold text-gray-900">{service.duration} min</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Category:</span>
-            <span className="font-semibold text-gray-900">{service.category}</span>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={onEdit}
-            className="flex-1 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
-          >
-            Edit
-          </button>
-          <button
-            onClick={onDelete}
-            className="flex-1 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
-          >
-            Delete
-          </button>
-        </div>
-      </div>
+      </main>
+
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 };
 
 export default VendorDashboard;
+

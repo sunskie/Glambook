@@ -1,170 +1,118 @@
-// ============================================
-// AUTH CONTEXT (TypeScript)
-// ============================================
 import { createContext, useState, useContext, useEffect, ReactNode } from 'react';
-import {
-  login as apiLogin,
-  register as apiRegister,
-  logout as apiLogout,
-  getCurrentUser,
-  User
-} from '../services/api';
+import { useNavigate } from 'react-router-dom';
+import showToast from '../components/common/Toast';
+import authService from '../services/api/authService';
+import { User, RegisterData, AuthContextType } from '../types';
 
-// ============================================
-// TYPE DEFINITIONS
-// ============================================
-
-interface AuthContextType {
-  user: User | null;
-  loading: boolean;
-  error: string | null;
-  login: (email: string, password: string) => Promise<any>;
-  register: (userData: RegisterData) => Promise<any>;
-  logout: () => void;
-  isVendor: () => boolean;
-  isClient: () => boolean;
-  isAdmin: () => boolean;
-  isAuthenticated: () => boolean;
-}
-
-interface RegisterData {
-  name: string;
-  email: string;
-  password: string;
-  role: 'vendor' | 'client';
-  phone?: string;
-}
-
-interface AuthProviderProps {
-  children: ReactNode;
-}
-
-// ============================================
-// CREATE CONTEXT
-// ============================================
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// ============================================
-// AUTH PROVIDER COMPONENT
-// ============================================
-export const AuthProvider = ({ children }: AuthProviderProps) => {
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
-  // ──────────────────────────────────────
-  // Check if user is already logged in on app load
-  // ──────────────────────────────────────
   useEffect(() => {
     checkAuth();
   }, []);
 
   const checkAuth = () => {
     try {
-      const currentUser = getCurrentUser();
-      if (currentUser) {
+      const token = localStorage.getItem('token');
+      const currentUser = authService.getCurrentUser();
+      if (token && currentUser) {
         setUser(currentUser);
+      } else {
+        clearSession();
       }
-    } catch (error) {
-      console.error('Auth check failed:', error);
-      setUser(null);
+    } catch {
+      clearSession();
     } finally {
       setLoading(false);
     }
   };
 
-  // ──────────────────────────────────────
-  // LOGIN
-  // ──────────────────────────────────────
+  const clearSession = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setUser(null);
+  };
+
   const login = async (email: string, password: string) => {
     try {
       setError(null);
       setLoading(true);
+      clearSession();
 
-      const response = await apiLogin({ email, password });
-      setUser(response.user);
+      const response: any = await authService.login({ email, password });
 
+      if (response.user) {
+        const normalizedUser = {
+          ...response.user,
+          _id: response.user.id || response.user._id,
+        };
+        setUser(normalizedUser);
+
+        const role = response.user.role;
+        if (role === 'vendor') navigate('/vendor/dashboard');
+        else if (role === 'client') navigate('/client/dashboard');
+        else if (role === 'admin') navigate('/admin/dashboard');
+
+        showToast.success('Login successful!');
+      }
       return response;
     } catch (error: any) {
-      const errorMessage = error.message || 'Login failed';
-      setError(errorMessage);
+      const msg = error.response?.data?.message || error.message || 'Login failed';
+      setError(msg);
+      showToast.error(msg);
       throw error;
     } finally {
       setLoading(false);
     }
   };
 
-  // ──────────────────────────────────────
-  // REGISTER
-  // ──────────────────────────────────────
   const register = async (userData: RegisterData) => {
     try {
       setError(null);
       setLoading(true);
-
-      const response = await apiRegister(userData);
-
-      if (response.token) {
-        setUser(response.user);
-      }
-
-      return response;
+      clearSession();
+      await authService.register(userData);
+      showToast.success('Registration successful! Please login.');
+      navigate('/login');
+      return { success: true };
     } catch (error: any) {
-      const errorMessage = error.message || 'Registration failed';
-      setError(errorMessage);
+      const msg = error.response?.data?.message || error.message || 'Registration failed';
+      setError(msg);
+      showToast.error(msg);
       throw error;
     } finally {
       setLoading(false);
     }
   };
 
-  // ──────────────────────────────────────
-  // LOGOUT
-  // ──────────────────────────────────────
   const logout = () => {
-    apiLogout();
-    setUser(null);
+    clearSession();
     setError(null);
-  };
-
-  // ──────────────────────────────────────
-  // HELPER FUNCTIONS
-  // ──────────────────────────────────────
-  const isVendor = (): boolean => user?.role === 'vendor';
-  const isClient = (): boolean => user?.role === 'client';
-  const isAdmin = (): boolean => user?.role === 'admin';
-  const isAuthenticated = (): boolean => !!user;
-
-  const value: AuthContextType = {
-    user,
-    loading,
-    error,
-    login,
-    register,
-    logout,
-    isVendor,
-    isClient,
-    isAdmin,
-    isAuthenticated
+    navigate('/login');
+    showToast.success('Logged out successfully');
   };
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{
+      user, loading, error, login, register, logout,
+      isVendor: () => user?.role === 'vendor',
+      isClient: () => user?.role === 'client',
+      isAdmin: () => user?.role === 'admin',
+      isAuthenticated: () => !!user,
+    }}>
       {!loading && children}
     </AuthContext.Provider>
   );
 };
 
-// ============================================
-// CUSTOM HOOK
-// ============================================
-export const useAuth = (): AuthContextType => {
+export const useAuth = () => {
   const context = useContext(AuthContext);
-  
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  
+  if (!context) throw new Error('useAuth must be used within AuthProvider');
   return context;
 };
 
