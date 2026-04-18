@@ -1,6 +1,7 @@
 // Frontend/src/App.tsx
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { ChatProvider } from './context/ChatContext';
 import { Toaster } from 'react-hot-toast';
 import BreadcrumbPageWrapper from './components/common/BreadcrumbPageWrapper';
 
@@ -41,12 +42,20 @@ import CourseEnrollment from './pages/Client/CourseEnrollment';
 import EnrollmentSuccess from './pages/Client/EnrollmentSuccess';
 import MyCourses from './pages/Client/MyCourses';
 import LearningDashboard from './pages/Client/LearningDashboard';
+import MessagesPage from './pages/Client/MessagesPage';
+import VendorMessagesPage from './pages/Vendor/VendorMessagesPage';
+import FloatingMessagesPill from './components/common/FloatingMessagesPill';
+import ChatButton from './components/chat/ChatButton';
+import QuizPage from './pages/Client/QuizPage';
+import CertificatePage from './pages/Client/CertificatePage';
+import CreateQuizPage from './pages/Vendor/CreateQuizPage';
 
 function App() {
   return (
     <BrowserRouter>  {/* ✅ BrowserRouter FIRST */}
       <AuthProvider>  {/* ✅ AuthProvider INSIDE BrowserRouter */}
-        <Toaster position="top-right" />
+        <ChatProvider>  {/* ✅ ChatProvider INSIDE AuthProvider */}
+          <Toaster position="top-right" />
         <Routes>
           {/* Landing Page Routes */}
            <Route path="/" element={<LandingPage />} />
@@ -66,7 +75,6 @@ function App() {
           <Route path="enrollments" element={<EnrollmentManagement />} />
           </Route>
 
-          {/* Vendor Routes */}
           <Route path="/vendor/dashboard" element={<VendorDashboard />} />
           <Route path="/vendor/create-service" element={<CreateService />} />
           <Route path="/vendor/edit-service/:id" element={<EditService />} />
@@ -76,6 +84,7 @@ function App() {
           <Route path="/vendor/courses/:id/edit" element={<BreadcrumbPageWrapper><EditCourse /></BreadcrumbPageWrapper>} />
           <Route path="/vendor/courses/:id/students" element={<BreadcrumbPageWrapper><CourseStudents /></BreadcrumbPageWrapper>} />
           <Route path="/vendor/courses/:id/attendance" element={<BreadcrumbPageWrapper><AttendanceTracking /></BreadcrumbPageWrapper>} />
+          <Route path="/vendor/quiz/create" element={<CreateQuizPage />} />
 
           {/* Client Routes */}
           <Route path="/client/dashboard" element={<ClientDashboard />} />
@@ -88,10 +97,21 @@ function App() {
           <Route path="/client/enrollment-success/:id" element={<EnrollmentSuccess />} />
           <Route path="/client/my-courses" element={<BreadcrumbPageWrapper><MyCourses /></BreadcrumbPageWrapper>} />
           <Route path="/client/learning/:id" element={<BreadcrumbPageWrapper><LearningDashboard /></BreadcrumbPageWrapper>} />
+          <Route path="/client/quiz/:enrollmentId" element={<QuizPage />} />
+
+          {/* Certificate — PUBLIC, no auth */}
+          <Route path="/certificate/:certificateId" element={<CertificatePage />} />
+
+          {/* Messages Routes */}
+          <Route path="/client/messages" element={<MessagesPage />} />
+          <Route path="/vendor/messages" element={<VendorMessagesPage />} />
 
           {/* Default Route */}
           <Route path="/" element={<Navigate to="/login" replace />} />
         </Routes>
+        <FloatingMessagesPill />
+        <ChatButton id="global-chat-button" />
+        </ChatProvider>
       </AuthProvider>
     </BrowserRouter>
   );
