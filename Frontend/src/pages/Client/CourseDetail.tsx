@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Clock, Users, Star, Award, BookOpen,
   CheckCircle, PlayCircle, FileText, ChevronDown, ChevronUp,
-  Shield, Bell, MapPin, Calendar
+  Shield, Bell, MapPin, Calendar, MessageCircle
 } from 'lucide-react';
 import courseService from '../../services/api/courseService';
 import enrollmentService from '../../services/api/enrollmentService';
@@ -306,6 +306,45 @@ const CourseDetail: React.FC = () => {
                 <button className="cd-enroll" onClick={handleEnroll} disabled={enrolling}
                   style={{ width: '100%', padding: '16px', borderRadius: '14px', border: 'none', backgroundColor: enrolling ? '#F9A8C9' : '#E91E63', color: 'white', fontSize: '15px', fontWeight: 800, cursor: enrolling ? 'wait' : 'pointer', fontFamily: 'Montserrat, sans-serif', letterSpacing: '0.04em', boxShadow: '0 6px 20px rgba(233,30,99,0.3)', marginBottom: '12px' }}>
                   {enrolling ? 'Enrolling…' : 'Enroll Now'}
+                </button>
+
+                {/* Chat with Vendor button */}
+                <button
+                  onClick={() => {
+                    const vendorId = course.vendorId?._id || course.vendorId;
+                    if (vendorId) {
+                      navigate(`/client/messages?vendorId=${vendorId}`);
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    borderRadius: '14px',
+                    border: '1px solid #5B62B3',
+                    backgroundColor: 'white',
+                    color: '#5B62B3',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontFamily: 'Montserrat, sans-serif',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    marginBottom: '12px',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#5B62B3';
+                    e.currentTarget.style.color = 'white';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'white';
+                    e.currentTarget.style.color = '#5B62B3';
+                  }}
+                >
+                  <MessageCircle size={16} />
+                  Chat with Vendor
                 </button>
 
                 <p style={{ margin: '0 0 20px', textAlign: 'center', fontSize: '12px', color: '#94A3B8' }}>30-Day Money-Back Guarantee</p>

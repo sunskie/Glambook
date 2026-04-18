@@ -393,6 +393,68 @@ const LearningDashboard: React.FC = () => {
                     );
                   })}
                 </div>
+
+                {/* ── Quiz / Certificate CTA ── */}
+                {enrollment.progress === 100 && !enrollment.certificateIssued && (
+                  <div style={{ marginTop: '16px' }}>
+                    <button
+                      onClick={() => navigate(`/client/quiz/${enrollment._id}`)}
+                      style={{
+                        width: '100%',
+                        padding: '14px',
+                        backgroundColor: '#5B62B3',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '15px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        fontFamily: 'Montserrat, sans-serif',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        boxShadow: '0 4px 12px rgba(91,98,179,0.3)',
+                        transition: 'opacity 0.2s',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.opacity = '0.9')}
+                      onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+                    >
+                      <Award size={18} />
+                      Take Final Quiz
+                    </button>
+                  </div>
+                )}
+                {enrollment.certificateIssued && enrollment.certificateUrl && (
+                  <div style={{ marginTop: '16px' }}>
+                    <button
+                      onClick={() => navigate(`/certificate/${enrollment.certificateUrl!.split('/').pop()}`)}
+                      style={{
+                        width: '100%',
+                        padding: '14px',
+                        backgroundColor: '#10B981',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '15px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        fontFamily: 'Montserrat, sans-serif',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        boxShadow: '0 4px 12px rgba(16,185,129,0.3)',
+                        transition: 'opacity 0.2s',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.opacity = '0.9')}
+                      onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+                    >
+                      <Award size={18} />
+                      View Certificate
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 

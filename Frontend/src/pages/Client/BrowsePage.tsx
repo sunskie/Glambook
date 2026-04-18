@@ -1,12 +1,49 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, Search, Sparkles } from 'lucide-react';
+import { ArrowLeft, Clock, Search, Sparkles, MessageCircle } from 'lucide-react';
 import serviceService from '../../services/api/serviceService';
 import { Service } from '../../types';
 import showToast from '../../components/common/Toast';
+import axios from 'axios';
 
 const BrowsePage: React.FC = () => {
   const navigate = useNavigate();
+
+  // Create chat channel with vendor
+  const createChatChannel = async (vendorId: string, serviceName: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        showToast.error('Please login first');
+        return;
+      }
+
+      // Create deterministic channel ID
+      const currentUserId = localStorage.getItem('userId');
+      const channelId = [currentUserId, vendorId].sort().join('_');
+      
+      const response = await axios.post(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/chat/channels/create`,
+        { vendorId, serviceName, channelId },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.data.success) {
+        showToast.success('Chat channel created successfully');
+        // Navigate to chat
+        navigate('/client/chat');
+      } else {
+        showToast.error(response.data.message || 'Failed to create chat channel');
+      }
+    } catch (error: any) {
+      console.error('Failed to create chat channel:', error);
+      showToast.error('Failed to create chat channel');
+    }
+  };
 
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,7 +119,11 @@ const BrowsePage: React.FC = () => {
       return 'Beauty Professional';
     }
 
-    return vendorId.name;
+    if (typeof vendorId === 'object' && vendorId.name) {
+      return vendorId.name;
+    }
+
+    return 'Unknown Vendor';
   };
 
   return (
@@ -659,6 +700,30 @@ const BrowsePage: React.FC = () => {
                         }}
                       >
                         Book Now
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const vendorId = typeof service.vendorId === 'string' ? service.vendorId : service.vendorId._id;
+                          navigate(`/client/messages?vendorId=${vendorId}`);
+                        }}
+                        style={{
+                          padding: '10px 16px',
+                          borderRadius: '12px',
+                          border: 'none',
+                          backgroundColor: '#10B981',
+                          color: 'white',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          fontWeight: 700,
+                          fontFamily: 'Montserrat, sans-serif',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        <MessageCircle size={14} />
+                        Chat with Vendor
                       </button>
                     </div>
                   </div>
