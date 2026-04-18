@@ -6,6 +6,7 @@ import {
   Video, FileText, Trash2, Save 
 } from 'lucide-react';
 import courseService from '../../services/api/courseService';
+import VendorSidebar from '../../components/Vendor/VendorSidebar';
 
 interface Lesson {
   _id?: string;
@@ -233,8 +234,9 @@ const EditCourse: React.FC = () => {
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#FAFAFA', padding: '24px' }}>
-      <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#fafafa', fontFamily: 'Montserrat, sans-serif' }}>
+      <VendorSidebar />
+      <div style={{ marginLeft: '280px', flex: 1, padding: '32px' }}>
         {/* Header */}
         <h1 style={{
           fontSize: '32px',

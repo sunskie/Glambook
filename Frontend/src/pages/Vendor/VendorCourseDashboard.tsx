@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import courseService from '../../services/api/courseService';
 import enrollmentService from '../../services/api/enrollmentService';
+import VendorSidebar from '../../components/Vendor/VendorSidebar';
 
 interface Course {
   _id: string;
@@ -128,8 +129,9 @@ const VendorCourseDashboard: React.FC = () => {
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#FAFAFA', padding: '24px' }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#fafafa', fontFamily: 'Montserrat, sans-serif' }}>
+      <VendorSidebar />
+      <div style={{ marginLeft: '280px', flex: 1, padding: '32px' }}>
         {/* Header */}
         <div style={{
           display: 'flex',
@@ -532,7 +534,7 @@ const VendorCourseDashboard: React.FC = () => {
                     {/* Actions */}
                     <div style={{
                       display: 'grid',
-                      gridTemplateColumns: 'repeat(3, 1fr)',
+                      gridTemplateColumns: 'repeat(4, 1fr)',
                       gap: '8px'
                     }}>
                       <button
@@ -579,6 +581,29 @@ const VendorCourseDashboard: React.FC = () => {
                       >
                         <Edit size={14} />
                         Edit
+                      </button>
+
+                      <button
+                        onClick={() => navigate(`/vendor/quiz/create?courseId=${course._id}`)}
+                        style={{
+                          padding: '8px',
+                          backgroundColor: '#EEF0FF',
+                          color: '#5B62B3',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '4px',
+                          fontFamily: 'Montserrat, sans-serif'
+                        }}
+                        title="Add Quiz"
+                      >
+                        <Award size={14} />
+                        Quiz
                       </button>
 
                       <button

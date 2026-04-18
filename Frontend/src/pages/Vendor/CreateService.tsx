@@ -4,6 +4,7 @@ import { ArrowLeft, Coins, Clock, Tag, FileText } from 'lucide-react';
 import serviceService from '../../services/api/serviceService';
 import showToast from '../../components/common/Toast';
 import ImageUpload from '../../components/common/ImageUpload';
+import VendorSidebar from '../../components/Vendor/VendorSidebar';
 
 /**
  * CreateService Component

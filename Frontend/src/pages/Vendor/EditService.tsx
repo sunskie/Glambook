@@ -5,6 +5,7 @@ import serviceService from '../../services/api/serviceService';
 import { Service } from '../../types';
 import showToast from '../../components/common/Toast';
 import ImageUpload from '../../components/common/ImageUpload';
+import VendorSidebar from '../../components/Vendor/VendorSidebar';
 
 /**
  * EditService Component

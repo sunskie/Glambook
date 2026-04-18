@@ -1,12 +1,13 @@
 // Frontend/src/pages/Vendor/CreateCourse.tsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Upload, Plus, X, Calendar, MapPin, 
+import {
+  Upload, Plus, X, Calendar, MapPin,
   Users, Video, FileText, CheckCircle, Trash2, File
 } from 'lucide-react';
 import courseService from '../../services/api/courseService';
 import Breadcrumb from '../../components/common/BreadCrumb';
+import VendorSidebar from '../../components/Vendor/VendorSidebar';
 
 interface Lesson {
   title: string;
@@ -1540,8 +1541,9 @@ const CreateCourse: React.FC = () => {
   );
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#FAFAFA', padding: '24px' }}>
-      <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#fafafa', fontFamily: 'Montserrat, sans-serif' }}>
+      <VendorSidebar />
+      <div style={{ marginLeft: '280px', flex: 1, padding: '32px' }}>
         {/* Breadcrumb */}
         <Breadcrumb 
           items={[

@@ -8,16 +8,17 @@ import {
   XCircle,
   AlertCircle,
   Search,
-  LayoutDashboard,
-  Store,
-  GraduationCap,
   DollarSign,
   Star,
+  MessageCircle,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import vendorBookingService from '../../services/api/vendorBookingService';
 import reviewService, { Review } from '../../services/api/reviewService';
 import showToast from '../../components/common/Toast';
+import ChatButton from '../../components/chat/ChatButton';
+import { useChat } from '../../context/ChatContext';
+import VendorSidebar from '../../components/Vendor/VendorSidebar';
 
 interface Booking {
   _id: string;
@@ -63,6 +64,7 @@ const STATUS_CONFIG = {
 
 const VendorBookings: React.FC = () => {
   const navigate = useNavigate();
+  const { openChatWithClient } = useChat();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [stats, setStats] = useState<BookingStats>({ total: 0, pending: 0, confirmed: 0, cancelled: 0, completed: 0 });
   const [loading, setLoading] = useState(true);
@@ -165,6 +167,11 @@ const VendorBookings: React.FC = () => {
     return booking.clientPhone || '—';
   };
 
+  const getClientId = (booking: Booking): string => {
+    if (booking.clientId && booking.clientId._id) return booking.clientId._id;
+    return 'unknown';
+  };
+
   // ✅ FIXED: null-safe — serviceId can be null if service was deleted
   const getServiceName = (booking: Booking): string => {
     if (booking.serviceId && booking.serviceId.title) return booking.serviceId.title;
@@ -214,32 +221,9 @@ const VendorBookings: React.FC = () => {
     (typeof r.userId === 'object' && r.userId?.name) || (r as any).clientName || 'Client';
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#FAFAFA', fontFamily: 'Montserrat, sans-serif' }}>
-      {/* Top Nav */}
-      <div style={{ backgroundColor: 'white', borderBottom: '1px solid #E5E7EB', padding: '0 24px' }}>
-        <div style={{ maxWidth: '1400px', margin: '0 auto', display: 'flex', gap: '0' }}>
-          {[
-            { label: 'Dashboard', icon: <LayoutDashboard size={16} />, path: '/vendor/dashboard' },
-            { label: 'Services', icon: <Store size={16} />, path: '/vendor/services/create' },
-            { label: 'Bookings', icon: <Calendar size={16} />, path: '/vendor/bookings', active: true },
-            { label: 'Courses', icon: <GraduationCap size={16} />, path: '/vendor/courses' },
-          ].map(item => (
-            <button key={item.label} onClick={() => navigate(item.path)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '6px',
-                padding: '14px 18px', background: 'none', border: 'none',
-                borderBottom: item.active ? '3px solid #5B62B3' : '3px solid transparent',
-                color: item.active ? '#5B62B3' : '#6B7280',
-                fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                fontFamily: 'Montserrat, sans-serif',
-              }}>
-              {item.icon}{item.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px 24px' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#fafafa', fontFamily: 'Montserrat, sans-serif' }}>
+      <VendorSidebar />
+      <div style={{ marginLeft: '280px', flex: 1, padding: '32px' }}>
         {/* Header */}
         <div style={{ marginBottom: '28px' }}>
           <h1 style={{ fontSize: '28px', fontWeight: 800, color: '#111', margin: 0 }}>My Bookings</h1>
@@ -394,6 +378,17 @@ const VendorBookings: React.FC = () => {
                           {(booking.status === 'cancelled' || booking.status === 'completed') && (
                             <span style={{ fontSize: '12px', color: '#9CA3AF', padding: '6px 0' }}>No actions</span>
                           )}
+                          <button
+                            onClick={() => {
+                              const clientId = getClientId(booking);
+                              if (clientId !== 'unknown') {
+                                navigate(`/vendor/messages?clientId=${clientId}`);
+                              }
+                            }}
+                            style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', backgroundColor: '#10B981', color: 'white', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'Montserrat, sans-serif', display: 'flex', alignItems: 'center', gap: '4px' }}
+                          >
+                            <MessageCircle size={12} /> Chat
+                          </button>
                         </div>
                         {booking.specialRequests && (
                           <div style={{ fontSize: '11px', color: '#9CA3AF', marginTop: '6px', fontStyle: 'italic' }}>

@@ -1,9 +1,9 @@
 // Frontend/src/pages/Vendor/VendorDashboard.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Plus, Search, Bell, MessageCircle, DollarSign, 
-  Calendar, Users, Settings, RefreshCw, BookOpen,
+import {
+  Plus, Search, Bell, MessageCircle, DollarSign,
+  Calendar, Users, RefreshCw, BookOpen,
   TrendingUp, Clock, MoreHorizontal, ArrowRight
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -11,6 +11,7 @@ import serviceService from '../../services/api/serviceService';
 import vendorBookingService from '../../services/api/vendorBookingService';
 import courseService from '../../services/api/courseService';
 import showToast from '../../components/common/Toast';
+import VendorSidebar from '../../components/Vendor/VendorSidebar';
 
 const VendorDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -76,257 +77,9 @@ const VendorDashboard: React.FC = () => {
   }
 
   return (
-    <div style={{ 
-      display: 'flex', 
-      minHeight: '100vh', 
-      backgroundColor: '#f8f9fc',
-      fontFamily: 'Montserrat, sans-serif'
-    }}>
-      {/* Sidebar */}
-      <aside style={{
-        width: '288px',
-        backgroundColor: 'white',
-        borderRight: '1px solid #e2e8f0',
-        height: '100vh',
-        position: 'sticky',
-        top: 0,
-        display: 'flex',
-        flexDirection: 'column'
-      }}>
-        <div style={{ 
-          display: 'flex', 
-          flexDirection: 'column', 
-          gap: '32px', 
-          padding: '24px',
-          height: '100%'
-        }}>
-          {/* Logo */}
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '12px',
-            padding: '0 8px'
-          }}>
-            <div style={{
-              width: '40px',
-              height: '40px',
-              backgroundColor: '#5B62B3',
-              borderRadius: '12px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'white'
-            }}>
-              <span style={{ fontSize: '24px' }}>💎</span>
-            </div>
-            <div>
-              <h1 style={{
-                color: '#5B62B3',
-                fontSize: '20px',
-                fontWeight: 700,
-                margin: 0,
-                lineHeight: 1.2
-              }}>
-                GlamBook
-              </h1>
-              <p style={{
-                color: '#94a3b8',
-                fontSize: '10px',
-                fontWeight: 600,
-                textTransform: 'uppercase',
-                letterSpacing: '0.1em',
-                margin: 0
-              }}>
-                Vendor Excellence
-              </p>
-            </div>
-          </div>
-
-          {/* Navigation */}
-          <nav style={{ 
-            display: 'flex', 
-            flexDirection: 'column', 
-            gap: '6px',
-            flex: 1
-          }}>
-            <button
-              onClick={() => navigate('/vendor/dashboard')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '12px 16px',
-                borderRadius: '12px',
-                backgroundColor: 'rgba(91, 98, 179, 0.1)',
-                color: '#5B62B3',
-                fontWeight: 600,
-                fontSize: '14px',
-                border: 'none',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                textAlign: 'left',
-                width: '100%'
-              }}
-            >
-              <TrendingUp size={20} />
-              Dashboard
-            </button>
-
-            <button
-              onClick={() => navigate('/vendor/bookings')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '12px 16px',
-                borderRadius: '12px',
-                backgroundColor: 'transparent',
-                color: '#64748b',
-                fontWeight: 500,
-                fontSize: '14px',
-                border: 'none',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                textAlign: 'left',
-                width: '100%'
-              }}
-            >
-              <Calendar size={20} />
-              Bookings
-            </button>
-
-            <button
-              onClick={() => navigate('/vendor/my-courses')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '12px 16px',
-                borderRadius: '12px',
-                backgroundColor: 'transparent',
-                color: '#64748b',
-                fontWeight: 500,
-                fontSize: '14px',
-                border: 'none',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                textAlign: 'left',
-                width: '100%'
-              }}
-            >
-              <BookOpen size={20} />
-              Academy
-            </button>
-
-            <button
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '12px 16px',
-                borderRadius: '12px',
-                backgroundColor: 'transparent',
-                color: '#64748b',
-                fontWeight: 500,
-                fontSize: '14px',
-                border: 'none',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                textAlign: 'left',
-                width: '100%'
-              }}
-            >
-              <DollarSign size={20} />
-              Earnings
-            </button>
-
-            <button
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '12px 16px',
-                borderRadius: '12px',
-                backgroundColor: 'transparent',
-                color: '#64748b',
-                fontWeight: 500,
-                fontSize: '14px',
-                border: 'none',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                textAlign: 'left',
-                width: '100%'
-              }}
-            >
-              <Users size={20} />
-              Customers
-            </button>
-
-            {/* Bottom section */}
-            <div style={{
-              marginTop: 'auto',
-              paddingTop: '16px',
-              borderTop: '1px solid #f1f5f9',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '6px'
-            }}>
-              <button
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: '12px 16px',
-                  borderRadius: '12px',
-                  backgroundColor: 'transparent',
-                  color: '#64748b',
-                  fontWeight: 500,
-                  fontSize: '14px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  textAlign: 'left',
-                  width: '100%'
-                }}
-              >
-                <Settings size={20} />
-                Settings
-              </button>
-
-              <button
-                onClick={() => navigate('/client/dashboard')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: '12px 16px',
-                  borderRadius: '12px',
-                  backgroundColor: 'transparent',
-                  color: '#5B62B3',
-                  fontWeight: 600,
-                  fontSize: '14px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  textAlign: 'left',
-                  width: '100%'
-                }}
-              >
-                <RefreshCw size={20} />
-                User View
-              </button>
-            </div>
-          </nav>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main style={{ 
-        flex: 1, 
-        display: 'flex', 
-        flexDirection: 'column',
-        minWidth: 0
-      }}>
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#fafafa', fontFamily: 'Montserrat, sans-serif' }}>
+      <VendorSidebar />
+      <div style={{ marginLeft: '280px', flex: 1, padding: '32px' }}>
         {/* Top Bar */}
         <header style={{
           height: '80px',
@@ -1141,7 +894,7 @@ const VendorDashboard: React.FC = () => {
             </div>
           </div>
         </div>
-      </main>
+      </div>
 
       <style>{`
         @keyframes spin {
