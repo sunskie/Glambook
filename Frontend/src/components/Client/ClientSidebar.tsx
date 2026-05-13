@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, Search, Compass, Send, Bell, BookOpen, User } from 'lucide-react';
+import { Home, Search, Compass, Send, Bell, BookOpen, User, LogOut, GraduationCap } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const PRIMARY = '#5B62B3';
@@ -8,15 +8,16 @@ const PRIMARY = '#5B62B3';
 const ClientSidebar: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
 
   const sidebarItems = [
     { icon: <Home size={20} />, label: 'Home', path: '/client/dashboard' },
     { icon: <Search size={20} />, label: 'Search', path: '/client/browse' },
-    { icon: <Compass size={20} />, label: 'Explore', path: '/client/services' },
+    { icon: <Compass size={20} />, label: 'Explore', path: '/client/browse' },
     { icon: <Send size={20} />, label: 'Messages', path: '/client/messages' },
     { icon: <Bell size={20} />, label: 'Notifications', path: '/client/notifications' },
-    { icon: <BookOpen size={20} />, label: 'Courses', path: '/client/courses' },
+    { icon: <BookOpen size={20} />, label: 'Courses', path: '/client/browse/courses' },
+    { icon: <GraduationCap size={20} />, label: 'My Courses', path: '/client/my-courses' },
     { icon: <User size={20} />, label: 'Profile', path: '/client/profile' },
   ];
 
@@ -93,6 +94,30 @@ const ClientSidebar: React.FC = () => {
           <div style={{ fontSize: '12px', color: '#8e8e8e' }}>Client</div>
         </div>
       </div>
+
+      <button
+        onClick={logout}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          width: '100%',
+          padding: '12px 20px',
+          border: 'none',
+          backgroundColor: 'transparent',
+          color: '#ef4444',
+          fontSize: '14px',
+          fontWeight: 600,
+          cursor: 'pointer',
+          textAlign: 'left',
+          fontFamily: 'Montserrat, sans-serif',
+          borderTop: '1px solid #dbdbdb',
+          marginTop: '8px',
+        }}
+      >
+        <LogOut size={20} />
+        Logout
+      </button>
     </div>
   );
 };
