@@ -3,12 +3,15 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Clock, Star, MapPin, ChevronLeft, ChevronRight, Lock, Sparkles, Shield } from 'lucide-react';
 import serviceService from '../../services/api/serviceService';
 import { createBooking } from '../../services/api/bookingService';
+import { loyaltyService } from '../../services/api/loyaltyService';
+import api from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import showToast from '../../components/common/Toast';
 import { Service } from '../../types';
+import EsewaPaymentButton from '../../components/common/EsewaPaymentButton';
+import RecommendationRow from '../../components/Client/RecommendationRow';
 
 /* ─── constants ─────────────────────────────────────────────── */
-const TIME_SLOTS = ['09:00 AM', '10:30 AM', '01:00 PM', '03:30 PM'];
 const DAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -48,6 +51,15 @@ const BookingPage: React.FC = () => {
   const [selectedTime, setSelectedTime] = useState('');
   const [calYear, setCalYear]   = useState(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
+  const [createdBookingId, setCreatedBookingId] = useState<string | null>(null);
+  const [bookingStep, setBookingStep] = useState<'form' | 'payment'>('form');
+  const [loyaltyData, setLoyaltyData] = useState<any>(null);
+  const [pointsToRedeem, setPointsToRedeem] = useState(0);
+  const [loyaltyDiscount, setLoyaltyDiscount] = useState(0);
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotsError, setSlotsError] = useState<string | null>(null);
+  const [recommendedServices, setRecommendedServices] = useState<any[]>([]);
   const [formData, setFormData] = useState({
     clientName: user?.name || '',
     clientEmail: user?.email || '',
@@ -57,6 +69,48 @@ const BookingPage: React.FC = () => {
 
   useEffect(() => { if (serviceId) fetchService(); }, [serviceId]);
 
+  useEffect(() => {
+  if (!service?._id) return;
+
+  api.get(`/recommendations/services?serviceId=${service._id}&category=${service.category}&maxPrice=${service.price}&limit=4`)
+    .then((res: any) => {
+      const items = res.data?.services || res.services || res.data || [];
+      const validItems = Array.isArray(items) ? items : [];
+      setRecommendedServices(validItems);
+    })
+    .catch(() => {});
+}, [service?._id]);
+
+  useEffect(() => {
+    loyaltyService.getBalance().then(setLoyaltyData).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (selectedDate && service?.vendorId) {
+      fetchAvailableSlots();
+    }
+  }, [selectedDate, service]);
+
+  const fetchAvailableSlots = async () => {
+    if (!selectedDate || !service?.vendorId) return;
+    
+    try {
+      setSlotsLoading(true);
+      setSlotsError(null);
+      const vendorId = typeof service.vendorId === 'string' ? service.vendorId : service.vendorId._id;
+      const res = await api.get(`/availability/slots?vendorId=${vendorId}&date=${selectedDate}&serviceDuration=${service.duration || 60}`);
+      setAvailableSlots(res.data.slots || []);
+      if (res.data.reason) {
+        setSlotsError(res.data.reason);
+      }
+    } catch (err: any) {
+      setAvailableSlots([]);
+      setSlotsError('Failed to load available slots');
+    } finally {
+      setSlotsLoading(false);
+    }
+  };
+
   const fetchService = async () => {
     try {
       setLoading(true);
@@ -64,7 +118,7 @@ const BookingPage: React.FC = () => {
       setService(res.data);
     } catch (err: any) {
       showToast.error(err.response?.data?.message || 'Failed to load service');
-      navigate('/client/services');
+      navigate('/client/browse/services');
     } finally { setLoading(false); }
   };
 
@@ -103,7 +157,7 @@ const BookingPage: React.FC = () => {
       return showToast.error('Please fill in your contact details');
     try {
       setSubmitting(true);
-      await createBooking({
+      const response = await createBooking({
         serviceId,
         clientName: formData.clientName.trim(),
         clientEmail: formData.clientEmail.trim(),
@@ -112,10 +166,11 @@ const BookingPage: React.FC = () => {
         bookingTime: selectedTime,
         specialRequests: formData.specialRequests.trim(),
       });
-      showToast.success('Booking confirmed!');
-      navigate('/client/bookings');
+      const bookingId = response.booking?._id || response.data?._id;
+      setCreatedBookingId(bookingId);
+      setBookingStep('payment');
     } catch (err: any) {
-      showToast.error(err.response?.data?.message || 'Booking failed');
+      showToast.error(err.response?.data?.message || 'Failed to create booking');
     } finally { setSubmitting(false); }
   };
 
@@ -127,6 +182,71 @@ const BookingPage: React.FC = () => {
     </div>
   );
   if (!service) return null;
+
+  /* ── payment step ────────────────────────────────────────── */
+  if (bookingStep === 'payment' && createdBookingId && service) {
+    return (
+      <div style={{ minHeight: '100vh', backgroundColor: '#FDFDFF', fontFamily: 'Montserrat, sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+        <div style={{ maxWidth: '480px', margin: '40px auto', padding: '32px', backgroundColor: 'white', borderRadius: '20px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', fontFamily: 'Montserrat, sans-serif' }}>
+          <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#111', marginBottom: '8px' }}>Complete Payment</h2>
+          <p style={{ color: '#6B7280', fontSize: '14px', marginBottom: '24px' }}>Your booking has been created. Complete payment to confirm it.</p>
+
+          <div style={{ backgroundColor: '#fafafa', borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ color: '#6B7280', fontSize: '14px' }}>Service</span>
+              <span style={{ fontWeight: 600, color: '#111', fontSize: '14px' }}>{service.title}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ color: '#6B7280', fontSize: '14px' }}>Date</span>
+              <span style={{ fontWeight: 600, color: '#111', fontSize: '14px' }}>{selectedDate} at {selectedTime}</span>
+            </div>
+            <div style={{ height: '1px', backgroundColor: '#E5E7EB', margin: '12px 0' }} />
+            {loyaltyDiscount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#16a34a', fontWeight: 600, fontSize: '14px' }}>
+                <span>Loyalty Discount</span>
+                <span>- Rs. {loyaltyDiscount.toFixed(0)}</span>
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontWeight: 700, color: '#111', fontSize: '16px' }}>Total</span>
+              <span style={{ fontWeight: 700, color: '#5B62B3', fontSize: '16px' }}>Rs. {(service.price - loyaltyDiscount).toFixed(0)}</span>
+            </div>
+          </div>
+
+          <div style={{
+            backgroundColor: '#FFF9C4',
+            border: '1px solid #F59E0B',
+            borderRadius: '10px',
+            padding: '16px',
+            marginBottom: '16px',
+            fontFamily: 'Montserrat, sans-serif',
+          }}>
+            <p style={{ margin: '0 0 8px', fontWeight: 700, fontSize: '13px', color: '#92400E' }}>
+              🧪 eSewa Test Mode — Use these credentials:
+            </p>
+            <p style={{ margin: '0 0 4px', fontSize: '13px', color: '#92400E' }}>
+              <strong>eSewa ID:</strong> 9806800001 (or 9806800002, 9806800003, 9806800004, 9806800005)
+            </p>
+            <p style={{ margin: '0 0 4px', fontSize: '13px', color: '#92400E' }}>
+              <strong>Password:</strong> Nepal@123
+            </p>
+            <p style={{ margin: 0, fontSize: '11px', color: '#B45309' }}>
+              These are official eSewa sandbox test accounts. Do not use real credentials.
+            </p>
+          </div>
+
+          <EsewaPaymentButton type="booking" id={createdBookingId} amount={service.price - loyaltyDiscount} />
+
+          <button
+            onClick={() => navigate('/client/bookings')}
+            style={{ width: '100%', marginTop: '12px', padding: '14px', backgroundColor: 'white', color: '#6B7280', border: '2px solid #E5E7EB', borderRadius: '12px', fontWeight: 600, fontSize: '14px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}
+          >
+            Pay Later (Pending)
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const inputStyle: React.CSSProperties = {
     width: '100%', boxSizing: 'border-box',
@@ -299,6 +419,17 @@ const BookingPage: React.FC = () => {
                 ))}
               </div>
             </div>
+
+            {/* Similar Services — shown below reviews like Daraz */}
+            {recommendedServices.length > 0 && (
+              <div style={{ marginTop: '48px', paddingBottom: '40px' }}>
+                <RecommendationRow
+                  items={recommendedServices}
+                  type="service"
+                  title="Clients Also Booked"
+                />
+              </div>
+            )}
           </div>
 
           {/* ═══ RIGHT COLUMN — BOOKING SIDEBAR ═════════════════ */}
@@ -357,23 +488,35 @@ const BookingPage: React.FC = () => {
               {/* ── Time Slots ───────────────────────────────── */}
               <div style={{ marginBottom: '28px' }}>
                 <p style={{ margin: '0 0 14px', fontSize: '10px', fontWeight: 700, color: '#64748B', letterSpacing: '0.18em', textTransform: 'uppercase' }}>Select Time</p>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  {TIME_SLOTS.map(t => {
-                    const active = selectedTime === t;
-                    return (
-                      <button key={t} onClick={() => setSelectedTime(t)} className={active ? '' : 'time-btn'}
-                        style={{
-                          padding: '12px 10px', borderRadius: '14px', fontSize: '12px', fontWeight: 700,
-                          border: `1.5px solid ${active ? '#5B62B3' : '#E2E8F0'}`,
-                          backgroundColor: active ? 'rgba(91,98,179,0.06)' : 'white',
-                          color: active ? '#5B62B3' : '#1A1C30',
-                          cursor: 'pointer', fontFamily: 'Montserrat, sans-serif', transition: 'all 0.18s',
-                        }}>
-                        {t}
-                      </button>
-                    );
-                  })}
-                </div>
+                {slotsLoading ? (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#6B7280' }}>Loading available slots...</div>
+                ) : slotsError ? (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#EF4444', backgroundColor: '#FEF2F2', borderRadius: '12px', border: '1px solid #FCA5A5' }}>
+                    {slotsError}
+                  </div>
+                ) : availableSlots.length === 0 ? (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#6B7280', backgroundColor: '#F9FAFB', borderRadius: '12px', border: '1px solid #E5E7EB' }}>
+                    No available slots for this date
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    {availableSlots.map(t => {
+                      const active = selectedTime === t;
+                      return (
+                        <button key={t} onClick={() => setSelectedTime(t)} className={active ? '' : 'time-btn'}
+                          style={{
+                            padding: '12px 10px', borderRadius: '14px', fontSize: '12px', fontWeight: 700,
+                            border: `1.5px solid ${active ? '#5B62B3' : '#E2E8F0'}`,
+                            backgroundColor: active ? 'rgba(91,98,179,0.06)' : 'white',
+                            color: active ? '#5B62B3' : '#1A1C30',
+                            cursor: 'pointer', fontFamily: 'Montserrat, sans-serif', transition: 'all 0.18s',
+                          }}>
+                          {t}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* ── Contact Fields ───────────────────────────── */}
@@ -418,6 +561,61 @@ const BookingPage: React.FC = () => {
                     <span style={{ fontWeight: 700, color: '#5B62B3', fontSize: '12px' }}>{selectedDate} · {selectedTime}</span>
                   </div>
                 )}
+
+                {loyaltyData && loyaltyData.points > 0 && (
+                  <div style={{ padding: '16px', backgroundColor: '#EEF2FF', borderRadius: '12px', border: '1px solid #C7D2FE', marginTop: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                      <div>
+                        <p style={{ margin: 0, fontWeight: 700, fontSize: '14px', color: '#5B62B3' }}>
+                          💎 Loyalty Points: {loyaltyData.points} pts
+                        </p>
+                        <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#6B7280' }}>
+                          1 point = Rs. 0.50 discount
+                        </p>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <p style={{ margin: 0, fontSize: '12px', color: '#6B7280' }}>Max redeemable</p>
+                        <p style={{ margin: 0, fontWeight: 700, fontSize: '14px', color: '#5B62B3' }}>
+                          Rs. {(loyaltyData.points * 0.5).toFixed(0)}
+                        </p>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <input
+                        type="range"
+                        min={0}
+                        max={loyaltyData.points}
+                        value={pointsToRedeem}
+                        onChange={(e) => {
+                          const pts = Number(e.target.value);
+                          setPointsToRedeem(pts);
+                          setLoyaltyDiscount(pts * 0.5);
+                        }}
+                        style={{ flex: 1 }}
+                      />
+                      <span style={{ fontWeight: 700, color: '#5B62B3', minWidth: '80px' }}>
+                        -{pointsToRedeem} pts
+                      </span>
+                    </div>
+                    {loyaltyDiscount > 0 && (
+                      <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#16a34a', fontWeight: 600 }}>
+                        ✅ Discount applied: Rs. {loyaltyDiscount.toFixed(0)}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {loyaltyDiscount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#16a34a', fontWeight: 600, fontSize: '14px' }}>
+                    <span>Loyalty Discount</span>
+                    <span>- Rs. {loyaltyDiscount.toFixed(0)}</span>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '16px' }}>
+                  <span>Total</span>
+                  <span style={{ color: '#5B62B3' }}>Rs. {(service.price - loyaltyDiscount).toFixed(0)}</span>
+                </div>
 
                 <button onClick={handleBooking} disabled={submitting} className="confirm-btn"
                   style={{

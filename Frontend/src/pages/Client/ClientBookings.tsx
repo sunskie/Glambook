@@ -3,6 +3,7 @@ import { Calendar, Clock, ArrowRight, Plus, BookOpen, Sparkles, Star } from 'luc
 import { useNavigate } from 'react-router-dom';
 import { getClientBookings, cancelBooking } from '../../services/api/bookingService';
 import reviewService from '../../services/api/reviewService';
+import api from '../../utils/api';
 import showToast from '../../components/common/Toast';
 import ConfirmModal from '../../components/common/ConfirmModal';
 import ClientSidebar from '../../components/Client/ClientSidebar';
@@ -57,6 +58,16 @@ const ClientBookings: React.FC = () => {
   const [reviewHover, setReviewHover] = useState(0);
   const [reviewComment, setReviewComment] = useState('');
   const [reviewLoading, setReviewLoading] = useState(false);
+
+  const [disputeModal, setDisputeModal] = useState<{
+    open: boolean;
+    bookingId: string;
+    serviceName: string;
+    totalPrice: number;
+  } | null>(null);
+  const [disputeForm, setDisputeForm] = useState({ reason: '', description: '', evidenceUrls: [] as string[] });
+  const [disputeSubmitting, setDisputeSubmitting] = useState(false);
+  const [disputeSuccess, setDisputeSuccess] = useState(false);
 
   useEffect(() => {
     if (activeTab === 'services') fetchBookings();
@@ -114,6 +125,23 @@ const ClientBookings: React.FC = () => {
     } finally {
       setReviewLoading(false);
     }
+  };
+
+  const handleFileDispute = async () => {
+    if (!disputeModal) return;
+    setDisputeSubmitting(true);
+    try {
+      await api.post('/disputes', {
+        bookingId: disputeModal.bookingId,
+        reason: disputeForm.reason,
+        description: disputeForm.description,
+        evidenceUrls: disputeForm.evidenceUrls,
+      });
+      setDisputeSuccess(true);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Failed to file dispute');
+    }
+    setDisputeSubmitting(false);
   };
 
   const getServiceTitle = (serviceId: Booking['serviceId']) => {
@@ -281,16 +309,40 @@ const ClientBookings: React.FC = () => {
                               Chat
                             </button>
                             {booking.status === 'completed' && typeof booking.serviceId === 'object' && booking.serviceId !== null && (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    const svc = booking.serviceId as { _id: string; title: string };
+                                    setReviewModal({ open: true, bookingId: booking._id, serviceId: svc._id, serviceName: svc.title });
+                                    setReviewRating(5);
+                                    setReviewComment('');
+                                  }}
+                                  style={{ padding: '6px 14px', backgroundColor: '#5B62B3', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'Montserrat, sans-serif', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                >
+                                  <Star size={12} /> Leave Review
+                                </button>
+                              </>
+                            )}
+                            {(booking.status === 'completed' || booking.status === 'disputed') && (
                               <button
-                                onClick={() => {
-                                  const svc = booking.serviceId as { _id: string; title: string };
-                                  setReviewModal({ open: true, bookingId: booking._id, serviceId: svc._id, serviceName: svc.title });
-                                  setReviewRating(5);
-                                  setReviewComment('');
+                                onClick={() => setDisputeModal({
+                                  open: true,
+                                  bookingId: booking._id,
+                                  serviceName: getServiceTitle(booking.serviceId),
+                                  totalPrice: booking.totalPrice,
+                                })}
+                                disabled={booking.status === 'disputed'}
+                                style={{
+                                  padding: '6px 14px',
+                                  backgroundColor: booking.status === 'disputed' ? '#FEF3C7' : 'white',
+                                  color: booking.status === 'disputed' ? '#D97706' : '#DC2626',
+                                  border: `1.5px solid ${booking.status === 'disputed' ? '#D97706' : '#DC2626'}`,
+                                  borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+                                  cursor: booking.status === 'disputed' ? 'not-allowed' : 'pointer',
+                                  fontFamily: 'Montserrat, sans-serif',
                                 }}
-                                style={{ padding: '6px 14px', backgroundColor: '#5B62B3', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'Montserrat, sans-serif', display: 'flex', alignItems: 'center', gap: '4px' }}
                               >
-                                <Star size={12} /> Leave Review
+                                {booking.status === 'disputed' ? '⚠️ Under Dispute' : '⚑ Report Issue'}
                               </button>
                             )}
                           </div>
@@ -415,6 +467,134 @@ const ClientBookings: React.FC = () => {
                 {reviewLoading ? 'Submitting...' : 'Submit Review'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dispute Modal */}
+      {disputeModal?.open && (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 9999, fontFamily: 'Montserrat, sans-serif',
+        }}>
+          <div style={{
+            backgroundColor: 'white', borderRadius: '20px',
+            padding: '32px', width: '100%', maxWidth: '520px',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            border: '2px solid #FCA5A5',
+          }}>
+            {disputeSuccess ? (
+              <div style={{ textAlign: 'center', padding: '20px' }}>
+                <div style={{ fontSize: '56px', marginBottom: '16px' }}>✅</div>
+                <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#111', marginBottom: '8px', fontFamily: 'Syne, sans-serif' }}>
+                  Dispute Filed Successfully
+                </h3>
+                <p style={{ color: '#6B7280', fontSize: '13px', marginBottom: '8px' }}>
+                  Your dispute has been submitted. The vendor has been notified and the payout has been frozen pending resolution.
+                </p>
+                <p style={{ color: '#5B62B3', fontSize: '12px', fontWeight: 600, marginBottom: '24px' }}>
+                  Our admin team will review within 24-48 hours.
+                </p>
+                <button
+                  onClick={() => { setDisputeModal(null); setDisputeSuccess(false); setDisputeForm({ reason: '', description: '', evidenceUrls: [] }); }}
+                  style={{ padding: '10px 24px', backgroundColor: '#5B62B3', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}
+                >
+                  Close
+                </button>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#111', fontFamily: 'Syne, sans-serif' }}>
+                      ⚑ Report an Issue
+                    </h3>
+                    <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6B7280' }}>
+                      {disputeModal.serviceName} · Rs. {disputeModal.totalPrice}
+                    </p>
+                  </div>
+                  <button onClick={() => setDisputeModal(null)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#9CA3AF' }}>×</button>
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>
+                    Issue Category *
+                  </label>
+                  <select
+                    value={disputeForm.reason}
+                    onChange={e => setDisputeForm(p => ({ ...p, reason: e.target.value }))}
+                    style={{
+                      width: '100%', padding: '10px 14px', borderRadius: '10px',
+                      border: '1.5px solid #E5E7EB', fontSize: '13px',
+                      fontFamily: 'Montserrat, sans-serif', outline: 'none',
+                      backgroundColor: 'white',
+                    }}
+                  >
+                    <option value="">Select a reason...</option>
+                    <option value="overpricing">💰 Overpricing — charged more than platform price</option>
+                    <option value="wrong_service">❌ Wrong Service — different service was provided</option>
+                    <option value="no_show">🚫 No-Show / Late — salon was unavailable</option>
+                    <option value="poor_quality">⭐ Poor Quality — service was unsatisfactory</option>
+                    <option value="other">📝 Other</option>
+                  </select>
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>
+                    Describe the Issue * (min 20 characters)
+                  </label>
+                  <textarea
+                    value={disputeForm.description}
+                    onChange={e => setDisputeForm(p => ({ ...p, description: e.target.value }))}
+                    placeholder="Please describe what went wrong in detail..."
+                    rows={4}
+                    style={{
+                      width: '100%', padding: '10px 14px', borderRadius: '10px',
+                      border: '1.5px solid #E5E7EB', fontSize: '13px',
+                      fontFamily: 'Montserrat, sans-serif', resize: 'vertical' as const,
+                      outline: 'none', boxSizing: 'border-box' as const,
+                    }}
+                  />
+                  <p style={{ fontSize: '11px', color: disputeForm.description.length < 20 ? '#DC2626' : '#16a34a', margin: '4px 0 0' }}>
+                    {disputeForm.description.length}/20 minimum characters
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: '24px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>
+                    Evidence Photo URL (optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Paste image URL as evidence..."
+                    onChange={e => setDisputeForm(p => ({ ...p, evidenceUrls: e.target.value ? [e.target.value] : [] }))}
+                    style={{
+                      width: '100%', padding: '10px 14px', borderRadius: '10px',
+                      border: '1.5px solid #E5E7EB', fontSize: '13px',
+                      fontFamily: 'Montserrat, sans-serif', outline: 'none',
+                      boxSizing: 'border-box' as const,
+                    }}
+                  />
+                </div>
+
+                <button
+                  disabled={!disputeForm.reason || disputeForm.description.length < 20 || disputeSubmitting}
+                  onClick={handleFileDispute}
+                  style={{
+                    width: '100%', padding: '13px',
+                    backgroundColor: (!disputeForm.reason || disputeForm.description.length < 20) ? '#E5E7EB' : '#DC2626',
+                    color: (!disputeForm.reason || disputeForm.description.length < 20) ? '#9CA3AF' : 'white',
+                    border: 'none', borderRadius: '12px', fontWeight: 800,
+                    fontSize: '14px', cursor: (!disputeForm.reason || disputeForm.description.length < 20) ? 'not-allowed' : 'pointer',
+                    fontFamily: 'Montserrat, sans-serif',
+                    transition: 'background 0.2s',
+                  }}
+                >
+                  {disputeSubmitting ? 'Submitting...' : '⚑ Submit Dispute'}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
