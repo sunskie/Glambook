@@ -9,6 +9,8 @@ import BreadcrumbPageWrapper from './components/common/BreadcrumbPageWrapper';
 import LandingPage from './pages/auth/LandingPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
+import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
+import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 
 //Admin Pages
 import AdminLayout from './Layouts/AdminLayout';
@@ -19,6 +21,9 @@ import ServiceManagement from './pages/admin/ServiceManagement';
 import CourseManagement from './pages/admin/CourseManagement';
 import BookingManagement from './pages/admin/BookingManagement';
 import EnrollmentManagement from './pages/admin/EnrollmentManagement';
+import DisputeManagement from './pages/admin/DisputeManagement';
+import AdminMessages from './pages/admin/AdminMessages';
+import AdminProfilePage from './pages/admin/AdminProfilePage';
 
 // Vendor Pages
 import VendorDashboard from './pages/Vendor/VendorDashboard';
@@ -30,9 +35,12 @@ import CreateCourse from './pages/Vendor/CreateCourse';
 import EditCourse from './pages/Vendor/EditCourse';
 import CourseStudents from './pages/Vendor/CourseStudents';
 import AttendanceTracking from './pages/Vendor/AttendenceTracking';
+import AvailabilityPage from './pages/Vendor/AvailabilityPage';
+import VendorDisputesPage from './pages/Vendor/VendorDisputesPage';
 
 // Client Pages
 import ClientDashboard from './pages/Client/ClientDashboard';
+import BrowseLandingPage from './pages/Client/BrowseLandingPage';
 import BrowsePage from './pages/Client/BrowsePage';
 import BookingPage from './pages/Client/BookingPage';
 import ClientBookings from './pages/Client/ClientBookings';
@@ -43,12 +51,22 @@ import EnrollmentSuccess from './pages/Client/EnrollmentSuccess';
 import MyCourses from './pages/Client/MyCourses';
 import LearningDashboard from './pages/Client/LearningDashboard';
 import MessagesPage from './pages/Client/MessagesPage';
+import ProfilePage from './pages/Client/ProfilePage';
+import ComparePage from './pages/Client/ComparePage';
+import PaymentSuccess from './pages/payment/PaymentSuccess';
+import PaymentFailure from './pages/payment/PaymentFailure';
+import CoursePaymentSuccess from './pages/payment/CoursePaymentSuccess';
 import VendorMessagesPage from './pages/Vendor/VendorMessagesPage';
+import VendorProfilePage from './pages/Vendor/VendorProfilePage';
 import FloatingMessagesPill from './components/common/FloatingMessagesPill';
 import ChatButton from './components/chat/ChatButton';
 import QuizPage from './pages/Client/QuizPage';
 import CertificatePage from './pages/Client/CertificatePage';
 import CreateQuizPage from './pages/Vendor/CreateQuizPage';
+import CoursePlayer from './pages/Client/CoursePlayer';
+import CourseQuiz from './pages/Client/CourseQuiz';
+import CourseCertificate from './pages/Client/CourseCertificate';
+import VerifyCertificate from './pages/VerifyCertificate';
 
 function App() {
   return (
@@ -62,6 +80,8 @@ function App() {
           {/* Auth Routes */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
 
           {/* Admin Routes */}
           <Route path="/admin" element={<AdminLayout />}>
@@ -73,34 +93,54 @@ function App() {
           <Route path="courses" element={<CourseManagement />} />
           <Route path="bookings" element={<BookingManagement />} />
           <Route path="enrollments" element={<EnrollmentManagement />} />
+          <Route path="disputes" element={<DisputeManagement />} />
+          <Route path="messages" element={<AdminMessages />} />
+          <Route path="profile" element={<AdminProfilePage />} />
           </Route>
 
           <Route path="/vendor/dashboard" element={<VendorDashboard />} />
           <Route path="/vendor/create-service" element={<CreateService />} />
           <Route path="/vendor/edit-service/:id" element={<EditService />} />
           <Route path="/vendor/bookings" element={<VendorBookings />} />
+          <Route path="/vendor/disputes" element={<VendorDisputesPage />} />
+          <Route path="/vendor/profile" element={<VendorProfilePage />} />
           <Route path="/vendor/courses" element={<BreadcrumbPageWrapper><VendorCourseDashboard /></BreadcrumbPageWrapper>} />
           <Route path="/vendor/courses/create" element={<CreateCourse />} />
           <Route path="/vendor/courses/:id/edit" element={<BreadcrumbPageWrapper><EditCourse /></BreadcrumbPageWrapper>} />
           <Route path="/vendor/courses/:id/students" element={<BreadcrumbPageWrapper><CourseStudents /></BreadcrumbPageWrapper>} />
           <Route path="/vendor/courses/:id/attendance" element={<BreadcrumbPageWrapper><AttendanceTracking /></BreadcrumbPageWrapper>} />
           <Route path="/vendor/quiz/create" element={<CreateQuizPage />} />
+          <Route path="/vendor/availability" element={<AvailabilityPage />} />
 
           {/* Client Routes */}
           <Route path="/client/dashboard" element={<ClientDashboard />} />
-          <Route path="/client/services" element={<BreadcrumbPageWrapper><BrowsePage /></BreadcrumbPageWrapper>} />
+          <Route path="/client/browse" element={<BrowseLandingPage />} />
+          <Route path="/client/browse/services" element={<BrowsePage />} />
+          <Route path="/client/browse/courses" element={<CourseBrowse />} />
+          <Route path="/client/services" element={<Navigate to="/client/browse/services" replace />} />
           <Route path="/client/book/:serviceId" element={<BookingPage />} />
           <Route path="/client/bookings" element={<BreadcrumbPageWrapper><ClientBookings /></BreadcrumbPageWrapper>} />
-          <Route path="/client/courses" element={<BreadcrumbPageWrapper><CourseBrowse /></BreadcrumbPageWrapper>} />
           <Route path="/client/courses/:id" element={<BreadcrumbPageWrapper><CourseDetail /></BreadcrumbPageWrapper>} />
           <Route path="/client/enroll/:id" element={<BreadcrumbPageWrapper><CourseEnrollment /></BreadcrumbPageWrapper>} />
           <Route path="/client/enrollment-success/:id" element={<EnrollmentSuccess />} />
           <Route path="/client/my-courses" element={<BreadcrumbPageWrapper><MyCourses /></BreadcrumbPageWrapper>} />
-          <Route path="/client/learning/:id" element={<BreadcrumbPageWrapper><LearningDashboard /></BreadcrumbPageWrapper>} />
+          <Route path="/client/learning/:id" element={<Navigate to="/client/my-courses" replace />} />
+          <Route path="/client/courses/:courseId/learn" element={<CoursePlayer />} />
+          <Route path="/client/courses/:courseId/quiz" element={<CourseQuiz />} />
+          <Route path="/verify/:certificateId" element={<VerifyCertificate />} />
+          <Route path="/client/courses/:courseId/certificate" element={<CourseCertificate />} />
           <Route path="/client/quiz/:enrollmentId" element={<QuizPage />} />
+          <Route path="/client/profile" element={<ProfilePage />} />
+          <Route path="/client/compare" element={<ComparePage />} />
 
           {/* Certificate — PUBLIC, no auth */}
           <Route path="/certificate/:certificateId" element={<CertificatePage />} />
+
+          {/* Payment Routes — PUBLIC, no auth (eSewa redirects here) */}
+          <Route path="/payment/success" element={<PaymentSuccess />} />
+          <Route path="/payment/failure" element={<PaymentFailure />} />
+          <Route path="/payment/course-success" element={<CoursePaymentSuccess />} />
+          <Route path="/payment/course-failure" element={<PaymentFailure />} />
 
           {/* Messages Routes */}
           <Route path="/client/messages" element={<MessagesPage />} />
