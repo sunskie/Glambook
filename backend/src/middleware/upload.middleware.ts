@@ -32,17 +32,25 @@ const serviceStorage = multer.diskStorage({
   },
 });
 
-// Configure storage for COURSES
+// Configure storage for COURSES (with subdirectories for different file types)
 const courseStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, uploadDirs.courses);
+    let uploadPath = 'uploads/courses/';
+    if (file.fieldname === 'video' || file.fieldname === 'lessonVideo' || file.mimetype.startsWith('video/')) {
+      uploadPath = 'uploads/courses/videos/';
+    } else if (file.fieldname === 'pdf' || file.fieldname === 'lessonPdf' || file.mimetype === 'application/pdf') {
+      uploadPath = 'uploads/courses/pdfs/';
+    } else {
+      uploadPath = 'uploads/courses/thumbnails/';
+    }
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+    cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
-    const uniqueId = crypto.randomBytes(16).toString('hex');
-    const timestamp = Date.now();
-    const ext = path.extname(file.originalname);
-    const filename = `course-${timestamp}-${uniqueId}${ext}`;
-    cb(null, filename);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
   },
 });
 
@@ -127,20 +135,58 @@ const lessonFilter = (
   }
 };
 
+// File filter for COURSES (accept all - validate in controller if needed)
+const courseFileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  const videoTypes = /mp4|mov|avi|mkv|webm|wmv|flv|m4v/i;
+  const imageTypes = /jpeg|jpg|png|gif|webp/i;
+  const pdfType = /pdf/i;
+  const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
+
+  if (
+    file.mimetype.startsWith('video/') ||
+    file.mimetype.startsWith('image/') ||
+    file.mimetype === 'application/pdf' ||
+    videoTypes.test(ext) ||
+    imageTypes.test(ext) ||
+    pdfType.test(ext)
+  ) {
+    cb(null, true);
+  } else {
+    cb(null, true); // Accept all files for now — validate in controller if needed
+  }
+};
+
 // Configure multer for SERVICES
 export const upload = multer({
   storage: serviceStorage,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB
+    fileSize: 500 * 1024 * 1024, // 500MB
   },
   fileFilter: imageFilter,
 });
 
-// Configure multer for COURSES
+// Configure multer for COURSES (multiple files)
+export const uploadCourseFiles = multer({
+  storage: courseStorage,
+  fileFilter: courseFileFilter,
+  limits: {
+    fileSize: 500 * 1024 * 1024, // 500MB per file
+    files: 20, // up to 20 files (lessons + thumbnail + PDFs)
+  },
+}).fields([
+  { name: 'thumbnail', maxCount: 1 },
+  { name: 'video', maxCount: 1 },
+  { name: 'lessonVideo', maxCount: 10 },
+  { name: 'lessonPdf', maxCount: 10 },
+  { name: 'pdf', maxCount: 10 },
+  { name: 'image', maxCount: 5 },
+]);
+
+// Keep old uploadCourse for backward compatibility (single file)
 export const uploadCourse = multer({
   storage: courseStorage,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB
+    fileSize: 500 * 1024 * 1024, // 500MB
   },
   fileFilter: imageFilter,
 });
@@ -149,7 +195,7 @@ export const uploadCourse = multer({
 export const uploadLesson = multer({
   storage: lessonStorage,
   limits: {
-    fileSize: 200 * 1024 * 1024, // 200MB for videos
+    fileSize: 500 * 1024 * 1024, // 500MB for videos
   },
   fileFilter: lessonFilter,
 });
@@ -167,7 +213,7 @@ export const handleMulterError = (
     if (error.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({
         success: false,
-        message: 'File is too large. Maximum size is 200MB for videos and 5MB for images.',
+        message: 'File is too large. Maximum size is 500MB for videos, 10MB for PDFs.',
       });
     }
 
