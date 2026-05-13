@@ -74,15 +74,15 @@ export interface ICourse extends Document {
 
 const lessonSchema = new Schema<ILesson>({
   title: { type: String, required: true },
-  description: { type: String, required: true },
-  duration: { type: Number, required: true }, // minutes
+  description: { type: String, default: '' },
+  duration: { type: Number, default: 0 }, // minutes
   contentType: { 
     type: String, 
     enum: ['video', 'pdf', 'article'],
-    required: true 
+    default: 'video'
   },
   contentUrl: { type: String, default: null },
-  orderIndex: { type: Number, required: true },
+  orderIndex: { type: Number, default: 0 },
   isPreview: { type: Boolean, default: false },
 });
 

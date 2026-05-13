@@ -13,6 +13,12 @@ const isValidObjectId = (id: string): boolean => {
 // Create Course (Vendor)
 export const createCourse = async (req: Request, res: Response): Promise<void> => {
   try {
+    console.log('CREATE COURSE body:', JSON.stringify(req.body, null, 2));
+    console.log('CREATE COURSE files:', req.files);
+    console.log('CREATE COURSE file:', req.file);
+
+    console.log('VALIDATION STARTED');
+
     const {
       title,
       description,
@@ -47,15 +53,44 @@ export const createCourse = async (req: Request, res: Response): Promise<void> =
     if (!instructorName?.trim()) errors.push('Instructor name is required');
 
     if (errors.length > 0) {
-      if (errors.length > 0) {
-        console.log('VALIDATION ERRORS:', errors); // ADD THIS LINE
-        console.log('REQ BODY:', req.body);
-      }
+      console.log('VALIDATION ERRORS:', errors);
       res.status(400).json({ success: false, message: 'Validation failed', errors });
       return;
     }
 
-    const imageUrl = req.file ? `/uploads/courses/${req.file.filename}` : null;
+    // Process lessons from form data — all fields optional
+    const lessonsData = req.body.lessons ?
+      (Array.isArray(req.body.lessons) ? req.body.lessons : [req.body.lessons])
+      : [];
+
+    const processedLessons = lessonsData.map((lesson: any, index: number) => {
+      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+
+      // Try to find uploaded video for this lesson
+      const videoFiles = files?.['lessonVideo'] || files?.['video'] || [];
+      const pdfFiles = files?.['lessonPdf'] || files?.['pdf'] || [];
+
+      const videoFile = videoFiles[index];
+      const pdfFile = pdfFiles[index];
+
+      return {
+        title: lesson.title || `Lesson ${index + 1}`,
+        description: lesson.description || '',
+        contentType: lesson.contentType || lesson.type || 'video',
+        duration: parseInt(lesson.duration) || 0,
+        isPreview: lesson.isPreview === 'true' || lesson.isPreview === true,
+        videoUrl: videoFile ? `/uploads/courses/videos/${videoFile.filename}` : (lesson.videoUrl || ''),
+        pdfUrl: pdfFile ? `/uploads/courses/pdfs/${pdfFile.filename}` : (lesson.pdfUrl || ''),
+        order: index,
+      };
+    });
+
+    // Handle thumbnail
+    const thumbnailFiles = (req.files as any)?.['thumbnail'];
+    const thumbnailFile = thumbnailFiles?.[0];
+    const thumbnail = thumbnailFile
+      ? `/uploads/courses/thumbnails/${thumbnailFile.filename}`
+      : (req.body.thumbnail || '');
 
     // Parse JSON fields
     const parsedLearning = whatYouWillLearn ?
@@ -67,9 +102,6 @@ export const createCourse = async (req: Request, res: Response): Promise<void> =
     const parsedFormat = courseFormat ?
       (typeof courseFormat === 'string' ? JSON.parse(courseFormat) : courseFormat) :
       { theoryHours: 0, practicalHours: 0, onlineContent: true, physicalClasses: true };
-
-    const parsedLessons = lessons ?
-      (typeof lessons === 'string' ? JSON.parse(lessons) : lessons) : [];
 
     const parsedBatches = batches ?
       (typeof batches === 'string' ? JSON.parse(batches) : batches) : [];
@@ -83,14 +115,14 @@ export const createCourse = async (req: Request, res: Response): Promise<void> =
       duration: parseInt(duration),
       level: level || 'beginner',
       vendorId,
-      imageUrl,
+      imageUrl: thumbnail || null,
       whatYouWillLearn: parsedLearning,
       requirements: parsedRequirements,
       courseFormat: parsedFormat,
       instructorName: instructorName.trim(),
       instructorBio: instructorBio || '',
       certificateIncluded: certificateIncluded === 'true' || certificateIncluded === true,
-      lessons: parsedLessons,
+      lessons: processedLessons,
       batches: parsedBatches,
       status: 'pending',
     });
@@ -129,11 +161,11 @@ export const getAllCourses = async (req: Request, res: Response) => {
 
     const filter: any = {};
 
-    // Only show approved or active courses to clients
-    // Vendors and admins can see all courses
-    if (req.user?.role === 'client') {
-      filter.status = { $in: ['approved', 'active'] };
-    }
+    // Temporarily return all courses (remove status filter for debugging)
+    // Uncomment this for production:
+    // if (req.user?.role === 'client') {
+    //   filter.status = { $in: ['approved', 'active'] };
+    // }
 
     if (category) {
       filter.category = category;
@@ -157,7 +189,7 @@ export const getAllCourses = async (req: Request, res: Response) => {
     }
 
     const courses = await Course.find(filter)
-      .populate('vendorId', 'name email')
+      .populate('vendorId', 'name profileImage bio')
       .sort({ createdAt: -1 })
       .limit(Number(limit))
       .skip((Number(page) - 1) * Number(limit))
@@ -166,13 +198,9 @@ export const getAllCourses = async (req: Request, res: Response) => {
     const total = await Course.countDocuments(filter);
 
     res.json({
+      success: true,
       courses,
-      pagination: {
-        total,
-        page: Number(page),
-        limit: Number(limit),
-        pages: Math.ceil(total / Number(limit)),
-      },
+      total: courses.length,
     });
 
     logger.info('Courses retrieved', { count: courses.length, userRole: req.user?.role });
