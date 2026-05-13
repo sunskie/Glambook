@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Clock, Search, Sparkles, MessageCircle } from 'lucide-react';
 import serviceService from '../../services/api/serviceService';
 import { Service } from '../../types';
 import showToast from '../../components/common/Toast';
 import axios from 'axios';
+import api from '../../utils/api';
+import RecommendationRow from '../../components/Client/RecommendationRow';
 
 const BrowsePage: React.FC = () => {
   const navigate = useNavigate();
@@ -51,17 +53,51 @@ const BrowsePage: React.FC = () => {
   const [searchInput, setSearchInput] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [selectedVendor, setSelectedVendor] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalServices, setTotalServices] = useState(0);
+  const [compareList, setCompareList] = useState<any[]>([]);
+  const [showCompareBar, setShowCompareBar] = useState(false);
+  const [hoveredService, setHoveredService] = useState<any>(null);
+  const [browseRecommendations, setBrowseRecommendations] = useState<any[]>([]);
+  const [browseRecLoaded, setBrowseRecLoaded] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 10000]);
+  const [minRating, setMinRating] = useState<number>(0);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [maxDuration, setMaxDuration] = useState<number>(9999);
 
   const categories = ['all', 'Hair', 'Makeup', 'Spa', 'Nails', 'Skincare', 'Massage', 'Other'];
+
+  const toggleCompare = (service: any) => {
+    setCompareList(prev => {
+      const exists = prev.find(s => s._id === service._id);
+      if (exists) return prev.filter(s => s._id !== service._id);
+      if (prev.length >= 3) {
+        showToast.error('You can compare up to 3 services only');
+        return prev;
+      }
+      return [...prev, service];
+    });
+  };
 
   useEffect(() => {
     fetchServices(currentPage);
   }, [currentPage, filterCategory, appliedSearch]);
 
-  const fetchServices = async (page: number = 1) => {
+useEffect(() => {
+  if (browseRecLoaded) return;
+  api.get('/recommendations/services?limit=6')
+    .then((res: any) => {
+      const items = res.data?.services || res.services || [];
+      setBrowseRecommendations(items);
+      setBrowseRecLoaded(true);
+    })
+    .catch(() => {});
+}, []);
+
+const fetchServices = async (page: number = 1) => {
     try {
       setLoading(true);
       setError('');
@@ -125,6 +161,34 @@ const BrowsePage: React.FC = () => {
 
     return 'Unknown Vendor';
   };
+
+  const vendorList = useMemo(() => {
+    const seen = new Map<string, { id: string; name: string }>();
+    (services || []).forEach((s: any) => {
+      const v = s.vendorId;
+      if (!v) return;
+      const id = typeof v === 'object' ? v._id : v;
+      const name = typeof v === 'object' ? (v.name || 'Unknown') : 'Unknown';
+      if (id && !seen.has(id)) seen.set(id, { id, name });
+    });
+    return Array.from(seen.values());
+  }, [services]);
+
+  const filteredServices = services.filter(s => {
+    if (selectedCategory !== 'all' && s.category !== selectedCategory) return false;
+    if (selectedVendor !== 'all') {
+      const vendorId = typeof s.vendorId === 'object' ? s.vendorId._id : s.vendorId;
+      if (vendorId !== selectedVendor) return false;
+    }
+    if (appliedSearch.trim()) {
+      const search = appliedSearch.toLowerCase();
+      return s.title.toLowerCase().includes(search) || s.description.toLowerCase().includes(search);
+    }
+    if (s.price < priceRange[0] || s.price > priceRange[1]) return false;
+    if (minRating > 0 && (s.rating || 0) < minRating) return false;
+    if (s.duration && s.duration > maxDuration) return false;
+    return true;
+  });
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#F8F9FA' }}>
@@ -311,104 +375,86 @@ const BrowsePage: React.FC = () => {
           </div>
         </section>
 
-        <section
+      {/* ── Search + Filter bar ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', fontFamily: 'Montserrat, sans-serif' }}>
+        {/* Search input */}
+        <div style={{ flex: 1, position: 'relative' as const }}>
+          <span style={{ position: 'absolute' as const, left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#9CA3AF', fontSize: '16px' }}>🔍</span>
+          <input
+            type="text"
+            placeholder="Search by service name or description..."
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { setAppliedSearch(searchInput.trim()); setCurrentPage(1); } }}
+            style={{
+              width: '100%', padding: '12px 16px 12px 42px',
+              border: '1.5px solid #E5E7EB', borderRadius: '12px',
+              fontSize: '14px', fontFamily: 'Montserrat, sans-serif',
+              outline: 'none', backgroundColor: 'white',
+              boxSizing: 'border-box' as const,
+              boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+            }}
+          />
+        </div>
+
+        {/* Category dropdown */}
+        <select
+          value={selectedCategory}
+          onChange={e => { setSelectedCategory(e.target.value); setSelectedVendor('all'); }}
           style={{
-            backgroundColor: 'white',
-            borderRadius: '20px',
-            padding: '24px',
-            boxShadow: '0 2px 10px rgba(15, 23, 42, 0.06)',
-            marginBottom: '24px',
+            padding: '12px 16px', border: '1.5px solid #E5E7EB',
+            borderRadius: '12px', fontSize: '14px',
+            fontFamily: 'Montserrat, sans-serif', backgroundColor: 'white',
+            color: '#374151', cursor: 'pointer', outline: 'none',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.05)', minWidth: '160px',
           }}
         >
-          <div
-            className="browse-filters"
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'minmax(0, 2fr) minmax(220px, 1fr) auto',
-              gap: '16px',
-              alignItems: 'center',
-            }}
-          >
-            <div style={{ position: 'relative' }}>
-              <Search
-                size={18}
-                style={{
-                  position: 'absolute',
-                  top: '50%',
-                  left: '14px',
-                  transform: 'translateY(-50%)',
-                  color: '#94A3B8',
-                }}
-              />
-              <input
-                type="text"
-                placeholder="Search by service name or description"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    handleSearch();
-                  }
-                }}
-                style={{
-                  width: '100%',
-                  height: '48px',
-                  borderRadius: '14px',
-                  border: '1px solid #D8DCEF',
-                  padding: '0 16px 0 42px',
-                  outline: 'none',
-                  fontSize: '14px',
-                  fontFamily: 'Montserrat, sans-serif',
-                }}
-              />
-            </div>
+          <option value="all">All Categories</option>
+          <option value="Hair Care">Hair Care</option>
+          <option value="Nail Care">Nail Care</option>
+          <option value="Makeup">Makeup</option>
+          <option value="Massage">Massage</option>
+          <option value="Skincare">Skincare</option>
+          <option value="Other">Other</option>
+        </select>
 
-            <select
-              value={filterCategory}
-              onChange={(e) => {
-                setFilterCategory(e.target.value);
-                setCurrentPage(1);
-              }}
-              style={{
-                height: '48px',
-                borderRadius: '14px',
-                border: '1px solid #D8DCEF',
-                padding: '0 14px',
-                backgroundColor: 'white',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontFamily: 'Montserrat, sans-serif',
-                outline: 'none',
-              }}
-            >
-              {categories.map((category) => (
-                <option key={category} value={category}>
-                  {category === 'all' ? 'All Categories' : category}
-                </option>
-              ))}
-            </select>
+        {/* Filter button */}
+        <button
+          onClick={() => setFilterOpen(true)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '8px',
+            padding: '12px 20px', backgroundColor: 'white',
+            border: '1.5px solid #E5E7EB', borderRadius: '12px',
+            fontSize: '14px', fontWeight: 700, cursor: 'pointer',
+            fontFamily: 'Montserrat, sans-serif', color: '#374151',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+            whiteSpace: 'nowrap' as const,
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/>
+          </svg>
+          Filters
+          {(minRating > 0 || priceRange[0] > 0 || priceRange[1] < 10000) && (
+            <span style={{ backgroundColor: '#5B62B3', color: 'white', borderRadius: '50%', width: '18px', height: '18px', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>!</span>
+          )}
+        </button>
+      </div>
 
-            <button
-              onClick={handleSearch}
-              style={{
-                height: '48px',
-                padding: '0 22px',
-                borderRadius: '14px',
-                border: 'none',
-                backgroundColor: '#5B62B3',
-                color: 'white',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: 700,
-                fontFamily: 'Montserrat, sans-serif',
-              }}
-            >
-              Search
+      {/* Vendor filter pills — below search bar */}
+      {vendorList.length > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' as const, fontFamily: 'Montserrat, sans-serif' }}>
+          <span style={{ fontSize: '12px', fontWeight: 700, color: '#374151' }}>Vendor:</span>
+          {[{ id: 'all', name: 'All Vendors' }, ...vendorList].map(vendor => (
+            <button key={vendor.id} onClick={() => setSelectedVendor(vendor.id)}
+              style={{ padding: '5px 14px', backgroundColor: selectedVendor === vendor.id ? '#5B62B3' : 'white', color: selectedVendor === vendor.id ? 'white' : '#374151', border: `1.5px solid ${selectedVendor === vendor.id ? '#5B62B3' : '#E5E7EB'}`, borderRadius: '20px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'Montserrat, sans-serif', transition: 'all 0.15s' }}>
+              {vendor.name}
             </button>
-          </div>
-        </section>
+          ))}
+        </div>
+      )}
 
-        <section style={{ marginBottom: '20px' }}>
+      <section style={{ marginBottom: '20px' }}>
           <p
             style={{
               margin: 0,
@@ -449,6 +495,135 @@ const BrowsePage: React.FC = () => {
             }}
           >
             {error}
+          </div>
+        )}
+
+        {/* ===== YOU MIGHT ALSO LIKE ===== */}
+        {browseRecommendations.length > 0 && (
+          <div style={{ marginBottom: '36px', fontFamily: 'Montserrat, sans-serif' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#111', fontFamily: 'Syne, sans-serif' }}>
+                You Might Also Like
+              </h2>
+            </div>
+            <p style={{ margin: '0 0 16px', fontSize: '12px', color: '#6B7280' }}>
+              Based on category, ratings, and popularity.
+            </p>
+
+            <div style={{ display: 'flex', gap: '18px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'none' }}>
+              {browseRecommendations.map((service: any) => {
+                return (
+                  <div
+                    key={service._id}
+                    onClick={() => navigate(`/client/book/${service._id}`)}
+                    style={{
+                      minWidth: '240px', maxWidth: '240px', flexShrink: 0,
+                      backgroundColor: 'white', borderRadius: '18px',
+                      overflow: 'hidden', cursor: 'pointer',
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+                      transition: 'transform 0.2s, box-shadow 0.2s',
+                      border: '1px solid #F3F4F6',
+                    }}
+                    onMouseEnter={e => {
+                      (e.currentTarget as HTMLElement).style.transform = 'translateY(-4px)';
+                      (e.currentTarget as HTMLElement).style.boxShadow = '0 12px 32px rgba(91,98,179,0.2)';
+                    }}
+                    onMouseLeave={e => {
+                      (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
+                      (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)';
+                    }}
+                  >
+                    {(() => {
+                    const BASE_URL = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
+                    const rawSrc = service.imageUrl || service.images?.[0] || '';
+                    const imgSrc = rawSrc.startsWith('http') ? rawSrc : rawSrc ? `${BASE_URL}${rawSrc}` : '';
+                    return (
+                      <div style={{ position: 'relative' as const, height: '160px', backgroundColor: '#EEF2FF', overflow: 'hidden' }}>
+                        {/* Compare tick overlay — top right of image */}
+                        <div
+                          onClick={e => { e.stopPropagation(); toggleCompare(service); }}
+                          style={{
+                            position: 'absolute' as const,
+                            top: '8px', right: '8px',
+                            width: '22px', height: '22px',
+                            borderRadius: '50%',
+                            backgroundColor: compareList.find((s: any) => s._id === service._id) ? '#5B62B3' : 'rgba(255,255,255,0.85)',
+                            border: compareList.find((s: any) => s._id === service._id) ? '2px solid #5B62B3' : '2px solid #D1D5DB',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            cursor: 'pointer',
+                            zIndex: 3,
+                            transition: 'all 0.15s',
+                            boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
+                          }}
+                        >
+                          {compareList.find((s: any) => s._id === service._id) && (
+                            <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                              <path d="M2 5.5L4.5 8L9 3" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          )}
+                        </div>
+                        <div style={{
+                          position: 'absolute' as const, inset: 0,
+                          background: 'linear-gradient(135deg, #EEF2FF, #C7D2FE)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '40px', zIndex: 0,
+                        }}>
+                          {service.category?.toLowerCase().includes('nail') ? '💅' :
+                           service.category?.toLowerCase().includes('hair') ? '💇' :
+                           service.category?.toLowerCase().includes('makeup') ? '💄' :
+                           service.category?.toLowerCase().includes('massage') ? '🧖' : '✨'}
+                        </div>
+                        {imgSrc && (
+                          <img src={imgSrc} alt={service.title}
+                            style={{ position: 'absolute' as const, inset: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 1 }}
+                            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                          />
+                        )}
+                        <span style={{
+                          position: 'absolute' as const, top: '12px', left: '12px', zIndex: 2,
+                          backgroundColor: 'rgba(0,0,0,0.5)', color: 'white',
+                          fontSize: '9px', fontWeight: 700, padding: '4px 10px',
+                          borderRadius: '20px', letterSpacing: '0.8px',
+                        }}>
+                          {service.category?.toUpperCase()}
+                        </span>
+                      </div>
+                    );
+                    })()}
+
+                    <div style={{ padding: '14px 16px' }}>
+                      <p style={{ margin: '0 0 6px', fontWeight: 700, fontSize: '14px', color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {service.title}
+                      </p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                        {service.duration && (
+                          <span style={{ fontSize: '11px', color: '#6B7280' }}>⏱ {service.duration} min</span>
+                        )}
+                        {service.rating > 0 && (
+                          <span style={{ fontSize: '11px', color: '#F59E0B', fontWeight: 600 }}>⭐ {service.rating?.toFixed(1)}</span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                          <p style={{ margin: 0, fontSize: '10px', color: '#9CA3AF' }}>STARTING FROM</p>
+                          <p style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#5B62B3' }}>Rs. {service.price}</p>
+                        </div>
+                        <button
+                          onClick={e => { e.stopPropagation(); navigate(`/client/book/${service._id}`); }}
+                          style={{
+                            padding: '7px 18px', backgroundColor: '#5B62B3', color: 'white',
+                            border: 'none', borderRadius: '10px', fontWeight: 700,
+                            fontSize: '12px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif'
+                          }}
+                        >
+                          Book
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -528,208 +703,102 @@ const BrowsePage: React.FC = () => {
             </button>
           </div>
         ) : (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-              gap: '24px',
-            }}
-          >
-            {services.map((service) => (
-              <div
-                key={service._id}
-                onClick={() => navigate(`/client/book/${service._id}`)}
-                style={{
-                  backgroundColor: 'white',
-                  borderRadius: '20px',
-                  overflow: 'hidden',
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 10px rgba(15, 23, 42, 0.06)',
-                  border: '1px solid #EDF1F7',
-                  transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-4px)';
-                  e.currentTarget.style.boxShadow = '0 18px 40px rgba(15, 23, 42, 0.12)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 2px 10px rgba(15, 23, 42, 0.06)';
-                }}
-              >
-                <div style={{ position: 'relative', height: '220px' }}>
-                  <img
-                    src={getImageUrl(service.imageUrl)}
-                    alt={service.title}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    onError={(e) => {
-                      e.currentTarget.src =
-                        'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=800&q=80';
-                    }}
-                  />
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: '14px',
-                      left: '14px',
-                      padding: '6px 12px',
-                      borderRadius: '999px',
-                      backgroundColor: 'rgba(255,255,255,0.92)',
-                      color: '#5B62B3',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      fontFamily: 'Montserrat, sans-serif',
-                    }}
-                  >
-                    {service.category}
-                  </div>
-                </div>
+          <div style={{ fontFamily: 'Montserrat, sans-serif' }}>
+            {/* Section header */}
+            <h2 style={{ margin: '0 0 20px', fontSize: '20px', fontWeight: 800, color: '#111', fontFamily: 'Syne, sans-serif' }}>
+              All Services
+            </h2>
 
-                <div style={{ padding: '22px' }}>
-                  <div
-                    style={{
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      color: '#64748B',
-                      marginBottom: '10px',
-                      fontFamily: 'Montserrat, sans-serif',
-                    }}
-                  >
-                    by {getVendorName(service.vendorId)}
+            {/* Services grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              {filteredServices.map((service: any) => (
+                <div
+                  key={service._id}
+                  style={{
+                    backgroundColor: 'white', borderRadius: '16px',
+                    border: '1px solid #F3F4F6', overflow: 'hidden',
+                    display: 'flex', alignItems: 'stretch',
+                    boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
+                    cursor: 'pointer', transition: 'box-shadow 0.2s',
+                    position: 'relative' as const,
+                  }}
+                  onClick={() => navigate(`/client/book/${service._id}`)}
+                  onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 8px 24px rgba(91,98,179,0.13)')}
+                  onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 2px 10px rgba(0,0,0,0.05)')}
+                >
+                  <div style={{ width: '110px', minWidth: '110px', backgroundColor: '#EEF2FF', overflow: 'hidden', position: 'relative' as const, minHeight: '110px' }}>
+                    {/* Compare tick overlay — top right of image */}
+                    <div
+                      onClick={e => { e.stopPropagation(); toggleCompare(service); }}
+                      style={{
+                        position: 'absolute' as const,
+                        top: '8px', right: '8px',
+                        width: '22px', height: '22px',
+                        borderRadius: '50%',
+                        backgroundColor: compareList.find((s: any) => s._id === service._id) ? '#5B62B3' : 'rgba(255,255,255,0.85)',
+                        border: compareList.find((s: any) => s._id === service._id) ? '2px solid #5B62B3' : '2px solid #D1D5DB',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: 'pointer',
+                        zIndex: 3,
+                        transition: 'all 0.15s',
+                        boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
+                      }}
+                    >
+                      {compareList.find((s: any) => s._id === service._id) && (
+                        <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                          <path d="M2 5.5L4.5 8L9 3" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      )}
+                    </div>
+                    {(() => {
+                      const BASE_URL = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
+                      const rawSrc = service.imageUrl || service.images?.[0] || '';
+                      const imgSrc = rawSrc.startsWith('http') ? rawSrc : rawSrc ? `${BASE_URL}${rawSrc}` : '';
+                      return imgSrc ? (
+                        <img src={imgSrc} alt={service.title}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                          onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      ) : (
+                        <div style={{ width: '100%', height: '100%', minHeight: '110px', background: 'linear-gradient(135deg, #EEF2FF, #C7D2FE)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px' }}>
+                          {service.category?.toLowerCase().includes('nail') ? '💅' : service.category?.toLowerCase().includes('hair') ? '💇' : service.category?.toLowerCase().includes('makeup') ? '💄' : '✨'}
+                        </div>
+                      );
+                    })()}
                   </div>
 
-                  <h3
-                    style={{
-                      margin: '0 0 10px 0',
-                      color: '#111111',
-                      fontSize: '20px',
-                      fontWeight: 700,
-                      lineHeight: 1.25,
-                      fontFamily: 'Syne, sans-serif',
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    {service.title}
-                  </h3>
-
-                  <p
-                    style={{
-                      margin: '0 0 18px 0',
-                      color: '#64748B',
-                      fontSize: '14px',
-                      lineHeight: 1.6,
-                      minHeight: '66px',
-                      fontFamily: 'Montserrat, sans-serif',
-                      display: '-webkit-box',
-                      WebkitLineClamp: 3,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    {service.description}
-                  </p>
-
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '12px',
-                      paddingTop: '16px',
-                      borderTop: '1px solid #EEF2F7',
-                    }}
-                  >
+                  <div style={{ flex: 1, padding: '14px 16px', display: 'flex', flexDirection: 'column' as const, justifyContent: 'space-between' }}>
                     <div>
-                      <p
-                        style={{
-                          margin: '0 0 4px 0',
-                          fontSize: '12px',
-                          color: '#94A3B8',
-                          fontFamily: 'Montserrat, sans-serif',
-                        }}
-                      >
-                        Starting from
+                      <p style={{ margin: '0 0 4px', fontWeight: 700, fontSize: '14px', color: '#111' }}>
+                        {service.title}
                       </p>
-                      <p
-                        style={{
-                          margin: 0,
-                          fontSize: '24px',
-                          fontWeight: 700,
-                          color: '#111111',
-                          fontFamily: 'Montserrat, sans-serif',
-                        }}
-                      >
-                        Rs. {service.price.toLocaleString()}
+                      <p style={{ margin: '0 0 8px', fontSize: '11px', color: '#6B7280',
+                        overflow: 'hidden', display: '-webkit-box',
+                        WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const,
+                      }}>
+                        {service.description}
                       </p>
                     </div>
-
-                    <div style={{ textAlign: 'right' }}>
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'flex-end',
-                          gap: '6px',
-                          marginBottom: '10px',
-                          color: '#64748B',
-                          fontSize: '13px',
-                          fontFamily: 'Montserrat, sans-serif',
-                        }}
-                      >
-                        <Clock size={14} />
-                        {service.duration} mins
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div>
+                        <p style={{ margin: 0, fontSize: '10px', color: '#9CA3AF' }}>STARTING FROM</p>
+                        <p style={{ margin: 0, fontSize: '14px', fontWeight: 800, color: '#5B62B3' }}>Rs. {service.price}</p>
                       </div>
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/client/book/${service._id}`);
-                        }}
+                        onClick={e => { e.stopPropagation(); navigate(`/client/book/${service._id}`); }}
                         style={{
-                          padding: '10px 16px',
-                          borderRadius: '12px',
-                          border: 'none',
-                          backgroundColor: '#5B62B3',
-                          color: 'white',
-                          cursor: 'pointer',
-                          fontSize: '13px',
-                          fontWeight: 700,
-                          fontFamily: 'Montserrat, sans-serif',
+                          padding: '7px 16px', backgroundColor: '#5B62B3', color: 'white',
+                          border: 'none', borderRadius: '9px', fontWeight: 700,
+                          fontSize: '12px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif'
                         }}
                       >
-                        Book Now
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const vendorId = typeof service.vendorId === 'string' ? service.vendorId : service.vendorId._id;
-                          navigate(`/client/messages?vendorId=${vendorId}`);
-                        }}
-                        style={{
-                          padding: '10px 16px',
-                          borderRadius: '12px',
-                          border: 'none',
-                          backgroundColor: '#10B981',
-                          color: 'white',
-                          cursor: 'pointer',
-                          fontSize: '13px',
-                          fontWeight: 700,
-                          fontFamily: 'Montserrat, sans-serif',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                        }}
-                      >
-                        <MessageCircle size={14} />
-                        Chat with Vendor
+                        Book
                       </button>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
 
@@ -796,6 +865,152 @@ const BrowsePage: React.FC = () => {
           </div>
         )}
       </main>
+
+      {compareList.length >= 2 && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: 'white',
+          borderRadius: '16px',
+          padding: '16px 24px',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '16px',
+          zIndex: 9998,
+          fontFamily: 'Montserrat, sans-serif',
+          border: '2px solid #5B62B3',
+        }}>
+          <div style={{
+            width: '28px', height: '28px', borderRadius: '50%',
+            backgroundColor: '#5B62B3', color: 'white',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontWeight: 700, fontSize: '13px',
+          }}>
+            {compareList.length}
+          </div>
+          {compareList.map(s => (
+            <div key={s._id} style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#EEF2FF', padding: '6px 12px', borderRadius: '8px' }}>
+              <span style={{ fontSize: '13px', color: '#5B62B3', fontWeight: 600 }}>{s.title}</span>
+              <button onClick={() => toggleCompare(s)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5B62B3', fontWeight: 700, fontSize: '16px', lineHeight: 1 }}>×</button>
+            </div>
+          ))}
+          <button
+            onClick={() => navigate('/client/compare', { state: { services: compareList } })}
+            style={{ padding: '10px 24px', backgroundColor: '#5B62B3', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700, fontSize: '14px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}
+          >
+            Compare Now →
+          </button>
+          <button
+            onClick={() => setCompareList([])}
+            style={{ padding: '10px 16px', backgroundColor: 'white', color: '#6B7280', border: '1px solid #E5E7EB', borderRadius: '10px', fontWeight: 600, fontSize: '13px', cursor: 'pointer' }}
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* ── Filter slide-out panel ── */}
+      {/* Backdrop */}
+      {filterOpen && (
+        <div
+          onClick={() => setFilterOpen(false)}
+          style={{ position: 'fixed' as const, inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', zIndex: 1100 }}
+        />
+      )}
+
+      {/* Panel */}
+      <div style={{
+        position: 'fixed' as const, top: 0, right: 0, bottom: 0,
+        width: '340px', backgroundColor: 'white',
+        boxShadow: '-4px 0 32px rgba(0,0,0,0.12)',
+        zIndex: 1200, transform: filterOpen ? 'translateX(0)' : 'translateX(100%)',
+        transition: 'transform 0.3s cubic-bezier(0.4,0,0.2,1)',
+        display: 'flex', flexDirection: 'column' as const,
+        fontFamily: 'Montserrat, sans-serif',
+      }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '24px', borderBottom: '1px solid #F3F4F6' }}>
+          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#111' }}>Filters</h3>
+          <button onClick={() => setFilterOpen(false)} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', color: '#6B7280', lineHeight: 1 }}>×</button>
+        </div>
+
+        {/* Scrollable body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column' as const, gap: '28px' }}>
+
+          {/* Price Range */}
+          <div>
+            <p style={{ margin: '0 0 12px', fontWeight: 700, fontSize: '14px', color: '#111' }}>Price Range</p>
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '8px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: '11px', color: '#6B7280', fontWeight: 600 }}>Min (Rs.)</label>
+                <input type="number" min={0} max={priceRange[1]} value={priceRange[0]}
+                  onChange={e => setPriceRange([Number(e.target.value), priceRange[1]])}
+                  style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #E5E7EB', borderRadius: '8px', fontSize: '13px', fontFamily: 'Montserrat, sans-serif', boxSizing: 'border-box' as const, outline: 'none' }}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: '11px', color: '#6B7280', fontWeight: 600 }}>Max (Rs.)</label>
+                <input type="number" min={priceRange[0]} value={priceRange[1]}
+                  onChange={e => setPriceRange([priceRange[0], Number(e.target.value)])}
+                  style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #E5E7EB', borderRadius: '8px', fontSize: '13px', fontFamily: 'Montserrat, sans-serif', boxSizing: 'border-box' as const, outline: 'none' }}
+                />
+              </div>
+            </div>
+            <input type="range" min={0} max={10000} value={priceRange[1]}
+              onChange={e => setPriceRange([priceRange[0], Number(e.target.value)])}
+              style={{ width: '100%', accentColor: '#5B62B3' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#9CA3AF' }}>
+              <span>Rs. {priceRange[0]}</span><span>Rs. {priceRange[1]}</span>
+            </div>
+          </div>
+
+          {/* Minimum Rating */}
+          <div>
+            <p style={{ margin: '0 0 12px', fontWeight: 700, fontSize: '14px', color: '#111' }}>Minimum Rating</p>
+            {[{ label: 'Any Rating', value: 0 }, { label: '4+ Stars', value: 4 }, { label: '4.5+ Stars', value: 4.5 }].map(opt => (
+              <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', cursor: 'pointer', fontSize: '14px', color: '#374151' }}>
+                <input type="radio" name="rating" checked={minRating === opt.value} onChange={() => setMinRating(opt.value)}
+                  style={{ accentColor: '#5B62B3', width: '16px', height: '16px' }} />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+
+          {/* Duration filter */}
+          <div>
+            <p style={{ margin: '0 0 12px', fontWeight: 700, fontSize: '14px', color: '#111' }}>Max Duration</p>
+            <select value={maxDuration} onChange={e => setMaxDuration(Number(e.target.value))}
+              style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #E5E7EB', borderRadius: '8px', fontSize: '13px', fontFamily: 'Montserrat, sans-serif', outline: 'none' }}>
+              <option value={9999}>Any Duration</option>
+              <option value={30}>Up to 30 min</option>
+              <option value={60}>Up to 1 hour</option>
+              <option value={120}>Up to 2 hours</option>
+              <option value={180}>Up to 3 hours</option>
+            </select>
+          </div>
+
+        </div>
+
+        {/* Footer actions */}
+        <div style={{ padding: '16px 24px', borderTop: '1px solid #F3F4F6', display: 'flex', gap: '12px' }}>
+          <button
+            onClick={() => { setPriceRange([0, 10000]); setMinRating(0); setMaxDuration(9999); }}
+            style={{ flex: 1, padding: '12px', backgroundColor: 'white', color: '#374151', border: '1.5px solid #E5E7EB', borderRadius: '10px', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}
+          >
+            Reset Filters
+          </button>
+          <button
+            onClick={() => setFilterOpen(false)}
+            style={{ flex: 1, padding: '12px', backgroundColor: '#5B62B3', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}
+          >
+            Done ✓
+          </button>
+        </div>
+      </div>
 
       <style>{`
         @keyframes browseShimmer {
