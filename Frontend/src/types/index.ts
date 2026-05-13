@@ -9,6 +9,9 @@ export interface User {
   email: string;
   role: 'client' | 'vendor' | 'admin';
   phone?: string;
+  profilePhoto?: string;
+  bio?: string;
+  location?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -57,6 +60,31 @@ export interface Service {
   updatedAt: string;
 }
 
+// Course Types
+export interface Course {
+  _id: string;
+  title: string;
+  description: string;
+  category: string;
+  price: number;
+  discountPrice?: number;
+  duration?: number;
+  level?: string;
+  status: string;
+  courseType?: string;
+  thumbnail?: string | null;
+  lessons?: any[];
+  modules?: Array<{ title: string; lessons: any[] }>;
+  vendorId?: {
+    _id: string;
+    name: string;
+    email: string;
+  };
+  certificate?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Booking Types
 export interface Booking {
   _id: string;
@@ -88,7 +116,7 @@ export interface Booking {
   clientPhone: string;
   clientEmail: string;
   specialRequests?: string;
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
+  status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'disputed';
   createdAt: string;
   updatedAt: string;
 }
@@ -125,6 +153,7 @@ export interface AuthContextType {
   login: (email: string, password: string) => Promise<any>;
   register: (userData: RegisterData) => Promise<any>;
   logout: () => void;
+  setUser: (user: User | null) => void;
   isVendor: () => boolean;
   isClient: () => boolean;
   isAdmin: () => boolean;

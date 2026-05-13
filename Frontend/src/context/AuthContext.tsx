@@ -99,7 +99,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AuthContext.Provider value={{
-      user, loading, error, login, register, logout,
+      user, loading, error, login, register, logout, setUser,
       isVendor: () => user?.role === 'vendor',
       isClient: () => user?.role === 'client',
       isAdmin: () => user?.role === 'admin',
