@@ -4,6 +4,7 @@ import Booking from '../models/Booking.model';
 import Service from '../models/service.model';
 import mongoose from 'mongoose';
 import { logger } from '../utils/logger';
+import { awardPoints } from './loyalty.controller';
 
 // Create a new booking
 export const createBooking = async (req: Request, res: Response) => {
@@ -386,6 +387,11 @@ export const updateBookingStatus = async (req: Request, res: Response) => {
     // Update status
     booking.status = status;
     await booking.save();
+
+    // Award loyalty points when booking is completed
+    if (status === 'completed') {
+      await awardPoints(booking._id.toString(), booking.totalPrice, booking.clientId.toString());
+    }
 
     logger.info('Booking status updated', {
       bookingId: id,

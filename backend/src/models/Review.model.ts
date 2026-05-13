@@ -47,12 +47,14 @@ const ReviewSchema: Schema = new Schema(
       type: String,
       required: true,
       trim: true,
+      minlength: 1,
       maxlength: 100,
     },
     comment: {
       type: String,
       required: true,
       trim: true,
+      minlength: 5,
       maxlength: 1000,
     },
     images: [{

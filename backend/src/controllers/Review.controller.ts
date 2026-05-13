@@ -160,7 +160,6 @@ export const getUserReviews = async (req: Request, res: Response) => {
     const skip = (page - 1) * limit;
 
     const reviews = await Review.find({ userId })
-      .populate('targetId')
       .sort('-createdAt')
       .skip(skip)
       .limit(limit);

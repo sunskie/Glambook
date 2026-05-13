@@ -258,7 +258,7 @@ const ReviewsList: React.FC<ReviewsListProps> = ({
                     fontSize: '16px',
                     fontWeight: 600
                   }}>
-                    {review.userId.name}
+                    {review.userId?.name || 'Anonymous'}
                   </span>
                   {review.verified && (
                     <span style={{
@@ -333,7 +333,7 @@ const ReviewsList: React.FC<ReviewsListProps> = ({
                     fontWeight: 600,
                     color: '#5B62B3'
                   }}>
-                    Response from {review.response.vendorId.name}
+                    Response from {review.response?.vendorId?.name || 'Vendor'}
                   </span>
                 </div>
                 <p style={{
