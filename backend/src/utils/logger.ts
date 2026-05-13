@@ -24,9 +24,23 @@ const logger = winston.createLogger({
       format: winston.format.combine(
         winston.format.colorize(),
         winston.format.printf(({ timestamp, level, message, ...meta }) => {
-          return `${timestamp} [${level}]: ${message} ${
-            Object.keys(meta).length ? JSON.stringify(meta, null, 2) : ''
-          }`;
+          // Safe stringify to handle circular references
+          const safeMeta = Object.keys(meta).length ? 
+            JSON.stringify(meta, (key, value) => {
+              if (typeof value === 'object' && value !== null) {
+                if (value.constructor && value.constructor.name === 'ClientRequest') {
+                  return '[ClientRequest]';
+                }
+                if (value.constructor && value.constructor.name === 'IncomingMessage') {
+                  return '[IncomingMessage]';
+                }
+                if (value.constructor && value.constructor.name === 'ServerResponse') {
+                  return '[ServerResponse]';
+                }
+              }
+              return value;
+            }, 2) : '';
+          return `${timestamp} [${level}]: ${message} ${safeMeta}`;
         })
       ),
     }),

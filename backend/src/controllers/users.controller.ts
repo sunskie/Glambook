@@ -29,7 +29,7 @@ export const getUserProfile = async (req: AuthRequest, res: Response) => {
 // Update user profile
 export const updateUserProfile = async (req: AuthRequest, res: Response) => {
   try {
-    const { name, email } = req.body;
+    const { name, email, phone } = req.body;
 
     const user = await User.findById(req.user._id);
 
@@ -41,8 +41,9 @@ export const updateUserProfile = async (req: AuthRequest, res: Response) => {
     }
 
     // Update fields
-    user.name = name || user.name;
-    user.email = email || user.email;
+    if (name) user.name = name;
+    if (email) user.email = email;
+    if (phone !== undefined) user.phone = phone;
 
     const updatedUser = await user.save();
 
@@ -53,6 +54,7 @@ export const updateUserProfile = async (req: AuthRequest, res: Response) => {
         id: updatedUser._id,
         name: updatedUser.name,
         email: updatedUser.email,
+        phone: updatedUser.phone,
         role: updatedUser.role,
       },
     });

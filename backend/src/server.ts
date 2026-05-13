@@ -14,6 +14,16 @@ import courseRoutes from './routes/course.routes';
 import enrollmentRoutes from './routes/enrollment.routes';
 import adminRoutes from './routes/admin.routes';
 import reviewRoutes from './routes/review.routes';
+import chatRoutes from './routes/chat.routes';
+import quizRoutes from './routes/quiz.routes';
+import paymentRoutes from './routes/payment.routes';
+import otpRoutes from './routes/otp.routes';
+import loyaltyRoutes from './routes/loyalty.routes';
+import availabilityRoutes from './routes/availability.routes';
+import disputeRoutes from './routes/dispute.routes';
+import recommendationRoutes from './routes/recommendation.routes';
+import profileRoutes from './routes/profile.routes';
+import authPasswordRoutes from './routes/auth.password.routes';
 
 // Import middleware
 import {
@@ -41,7 +51,11 @@ app.use(securityHeaders);
 
 // CORS Configuration
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: [
+    'http://localhost:5173',
+    'https://rc-epay.esewa.com.np',
+    'https://epay.esewa.com.np',
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
@@ -50,8 +64,8 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Body parser middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '500mb' }));
+app.use(express.urlencoded({ extended: true, limit: '500mb' }));
 
 // Data sanitization
 app.use(sanitizeData);
@@ -82,6 +96,16 @@ app.use('/api/courses', courseRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/quiz', quizRoutes);
+app.use('/api/payment', paymentRoutes);
+app.use('/api/otp', otpRoutes);
+app.use('/api/loyalty', loyaltyRoutes);
+app.use('/api/availability', availabilityRoutes);
+app.use('/api/disputes', disputeRoutes);
+app.use('/api/recommendations', recommendationRoutes);
+app.use('/api/profile', profileRoutes);
+app.use('/api/auth', authPasswordRoutes);
 // Root route
 app.get('/', (req, res) => {
   res.json({
