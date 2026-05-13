@@ -138,7 +138,7 @@ export const submitQuiz = async (req: AuthRequest, res: Response) => {
 
     // Get user's name
     const user = await User.findById(userId).select('name');
-    const studentName = user?.name || enrollment.clientName || 'Student';
+    const studentName = user?.name || (enrollment as any).clientName || 'Student';
     const courseName = (enrollment.courseId as any)?.title || 'Course';
 
     // Save certificate
