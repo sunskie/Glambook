@@ -3,7 +3,7 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LogOut, User, LayoutDashboard, Users, Briefcase,
-  Scissors, Calendar, BookOpen, GraduationCap
+  Scissors, Calendar, BookOpen, GraduationCap, Shield
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -24,6 +24,8 @@ const AdminHeader: React.FC = () => {
     { path: '/admin/courses', label: 'Courses', icon: BookOpen },
     { path: '/admin/bookings', label: 'Bookings', icon: Calendar },
     { path: '/admin/enrollments', label: 'Enrollments', icon: GraduationCap },
+    { path: '/admin/disputes', label: 'Disputes', icon: Shield },
+    { path: '/admin/profile', label: 'Profile', icon: User },
   ];
 
   return (
