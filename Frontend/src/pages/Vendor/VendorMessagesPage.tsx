@@ -60,7 +60,7 @@ const VendorMessagesPage: React.FC = () => {
   const getOtherUser = (channel: any) => {
     const members = Object.values(channel.state.members);
     const otherMember = members.find((m: any) => m.user?.id !== state.user?.id);
-    return otherMember?.user;
+    return (otherMember as any)?.user;
   };
 
   const handleSendMessage = async () => {

@@ -163,7 +163,7 @@ const ChatComponent: React.FC<ChatComponentProps> = ({ bookingId, className = ''
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap'
                     }}>
-                      {props.latestMessage.text}
+                      {typeof props.latestMessage === 'string' ? props.latestMessage : (props.latestMessage as any)?.text || ''}
                     </p>
                   )}
                 </div>

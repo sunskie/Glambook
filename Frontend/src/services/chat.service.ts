@@ -88,7 +88,7 @@ class ChatService {
             name: response.data.data.user.name,
             email: response.data.data.user.email,
             role: response.data.data.user.role,
-          },
+          } as any,
           response.data.data.token
         );
         
@@ -141,7 +141,7 @@ class ChatService {
             name: this.currentUser?.name || '',
             email: (this.currentUser as any)?.email || '',
             role: this.currentUser?.role || '',
-          },
+          } as any,
           response.data.data.token
         );
       }

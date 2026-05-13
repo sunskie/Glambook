@@ -10,17 +10,16 @@ const FloatingMessagesPill: React.FC = () => {
   const { user } = useAuth();
   const { state } = useChat();
 
-  const hiddenPaths = ['/client/messages', '/vendor/messages', '/login', '/register', '/'];
+  const hiddenPaths = ['/client/messages', '/vendor/messages', '/admin/messages', '/login', '/register', '/'];
   if (!user || hiddenPaths.some(path => location.pathname === path || location.pathname.startsWith(path + '/'))) return null;
 
-  // Determine which messages page to navigate to based on current path
+  // Determine which messages page to navigate to based on user role
   const getMessagesPath = () => {
-    if (location.pathname.startsWith('/client')) {
-      return '/client/messages';
-    } else if (location.pathname.startsWith('/vendor')) {
+    if (user?.role === 'admin') {
+      return '/admin/messages';
+    } else if (user?.role === 'vendor') {
       return '/vendor/messages';
     } else {
-      // Default to client messages if not sure
       return '/client/messages';
     }
   };
