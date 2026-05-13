@@ -11,6 +11,7 @@ import ReviewsList from '../../components/common/ReviewsList';
 import ReviewForm from '../../components/common/ReviewForm';
 import { useAuth } from '../../context/AuthContext';
 import showToast from '../../components/common/Toast';
+import api from '../../utils/api';
 
 /* ─── types ─────────────────────────────────────────────────── */
 interface Lesson {
@@ -108,8 +109,26 @@ const CourseDetail: React.FC = () => {
   const [refreshKey, setRefreshKey]   = useState(0);
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
   const [enrolling, setEnrolling]     = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [isEnrolled, setIsEnrolled] = useState(false);
+  const [enrollmentCount, setEnrollmentCount] = useState(0);
+  const [openModule, setOpenModule] = useState<number>(0);
 
   useEffect(() => { if (id) fetchCourse(); }, [id]);
+
+  useEffect(() => {
+    if (!course?._id) return;
+    api.get('/enrollments/my')
+      .then((res: any) => {
+        const enrollments = res?.data?.enrollments || res?.enrollments || [];
+        const activeEnrollments = enrollments.filter((e: any) => e.status !== 'dropped');
+        setEnrollmentCount(activeEnrollments.length);
+        setIsEnrolled(activeEnrollments.some((e: any) =>
+          (e.courseId?._id || e.courseId) === course._id
+        ));
+      })
+      .catch(() => {});
+  }, [course?._id]);
 
   useEffect(() => {
     if (!course?.courseFormat?.physicalClasses || !course.batches?.length) {
@@ -134,41 +153,133 @@ const CourseDetail: React.FC = () => {
 
   const handleReviewSuccess = () => { setShowForm(false); setRefreshKey(k => k + 1); };
 
-  const handleEnroll = async () => {
+  const handleEnrollClick = async () => {
     if (!course) return;
     if (!user) {
       navigate('/login');
-      return;
-    }
-    if (!user.phone?.trim()) {
-      showToast.error('Please add a phone number to your profile before enrolling.');
       return;
     }
     if (course.courseFormat?.physicalClasses && course.batches?.length > 0 && !selectedBatch) {
       showToast.error('Please select a batch');
       return;
     }
+    const price = course.discountPrice || course.price;
+    if (!price || price === 0) {
+      // Free course — enroll directly
+      handleDirectEnroll();
+    } else {
+      // Paid course — show payment options
+      setShowPaymentModal(true);
+    }
+  };
+
+  const handleDirectEnroll = async () => {
+    if (!course || !user) return;
+    setEnrolling(true);
     try {
-      setEnrolling(true);
-      const response: any = await enrollmentService.createEnrollment({
+      await api.post('/enrollments', {
         courseId: course._id,
         selectedBatchId: selectedBatch?._id,
         clientName: user.name,
-        clientPhone: user.phone.trim(),
+        clientPhone: user.phone?.trim() || '',
         clientEmail: user.email,
       });
-      const enrollmentId = response?.data?._id;
-      if (!enrollmentId) {
-        showToast.error('Enrollment succeeded but no enrollment id was returned.');
-        return;
+      showToast.success('Enrolled successfully!');
+      navigate(`/client/learn/${course._id}`);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Failed to enroll';
+      const requiresPhone = err?.response?.data?.requiresPhone;
+      if (requiresPhone) {
+        if (window.confirm(`${msg}\n\nGo to profile to add phone number?`)) {
+          navigate('/client/profile');
+        }
+      } else {
+        showToast.error(msg);
       }
-      navigate(`/client/enrollment-success/${enrollmentId}`);
-    } catch (error: any) {
-      const msg = error?.response?.data?.message || error?.message || 'Enrollment failed';
-      showToast.error(msg);
-    } finally {
+    }
+    setEnrolling(false);
+  };
+
+  const handleEsewaPayment = async () => {
+    if (!course || !user) return;
+    setEnrolling(true);
+    try {
+      const res: any = await api.post('/payments/course/initiate', {
+        amount: course.price,
+        courseId: course._id,
+        courseName: course.title,
+      });
+
+      const paymentData = res.data || res;
+
+      sessionStorage.setItem('pendingCourseEnrollment', JSON.stringify({
+        courseId: course._id,
+        selectedBatchId: selectedBatch?._id,
+        amount: course.price,
+      }));
+
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = 'https://rc-epay.esewa.com.np/api/epay/main/v2/form';
+
+      const fields: any = {
+        amount: paymentData.amount,
+        tax_amount: 0,
+        total_amount: paymentData.amount,
+        transaction_uuid: paymentData.transaction_uuid,
+        product_code: paymentData.product_code,
+        product_service_charge: 0,
+        product_delivery_charge: 0,
+        success_url: paymentData.success_url,
+        failure_url: paymentData.failure_url,
+        signed_field_names: 'total_amount,transaction_uuid,product_code',
+        signature: paymentData.signature,
+      };
+
+      Object.entries(fields).forEach(([key, value]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = key;
+        input.value = String(value);
+        form.appendChild(input);
+      });
+
+      document.body.appendChild(form);
+      form.submit();
+    } catch (err: any) {
+      showToast.error('Failed to initiate payment');
       setEnrolling(false);
     }
+  };
+
+  const handleMockPayment = async () => {
+    if (!course || !user) return;
+    setEnrolling(true);
+    try {
+      await api.post('/enrollments', {
+        courseId: course._id,
+        selectedBatchId: selectedBatch?._id,
+        clientName: user.name,
+        clientPhone: user.phone?.trim() || '',
+        clientEmail: user.email,
+        paymentMethod: 'mock',
+        transactionId: `MOCK-${Date.now()}`,
+      });
+      showToast.success('Enrolled successfully!');
+      setShowPaymentModal(false);
+      navigate(`/client/learn/${course._id}`);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Failed to enroll';
+      const requiresPhone = err?.response?.data?.requiresPhone;
+      if (requiresPhone) {
+        if (window.confirm(`${msg}\n\nGo to profile?`)) {
+          navigate('/client/profile');
+        }
+      } else {
+        showToast.error(msg);
+      }
+    }
+    setEnrolling(false);
   };
 
   /* ── loading ──────────────────────────────────────────────── */
@@ -227,144 +338,130 @@ const CourseDetail: React.FC = () => {
       </header>
 
       {/* ═══ HERO — dark banner ══════════════════════════════════ */}
-      <div style={{ backgroundColor: '#1A1C30', color: 'white', padding: '48px 32px' }}>
-        <div style={{ maxWidth: '1440px', margin: '0 auto' }}>
+      <div style={{ backgroundColor: '#0F0F1A', padding: '48px 0 0', fontFamily: 'Montserrat, sans-serif' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 40px', display: 'flex', gap: '48px', alignItems: 'flex-start' }}>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '48px', alignItems: 'start' }}>
-
-            {/* ── Left: course info ── */}
-            <div style={{ animation: 'fadeUp 0.4s ease both' }}>
-              <span style={{ display: 'inline-block', fontSize: '11px', fontWeight: 700, color: '#E91E63', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: '14px' }}>
-                {course.category}
-              </span>
-
-              <h1 style={{ margin: '0 0 16px', fontSize: '42px', fontWeight: 800, lineHeight: 1.1, letterSpacing: '-0.02em' }}>
-                {course.title}
-              </h1>
-
-              <p style={{ margin: '0 0 28px', fontSize: '17px', color: 'rgba(255,255,255,0.7)', lineHeight: 1.7, fontWeight: 300, maxWidth: '680px' }}>
-                {course.description}
-              </p>
-
-              {/* Stats row */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '28px', flexWrap: 'wrap', marginBottom: '20px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Stars n={Math.round(course.rating)} />
-                  <span style={{ fontWeight: 700, fontSize: '15px' }}>{course.rating.toFixed(1)}</span>
-                  <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)' }}>({course.reviewCount} reviews)</span>
-                </div>
-                <span style={{ width: '1px', height: '16px', backgroundColor: 'rgba(255,255,255,0.15)', display: 'inline-block' }} />
-                <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
-                  <Users size={16} /> {course.enrollmentCount} students
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
-                  <Clock size={16} /> {course.duration} hours
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
-                  <BookOpen size={16} /> {course.level}
-                </div>
-              </div>
-
-              <p style={{ margin: 0, fontSize: '14px', color: 'rgba(255,255,255,0.6)' }}>
-                Created by <strong style={{ color: 'white' }}>{course.instructorName}</strong>
-              </p>
+          {/* Left — course info */}
+          <div style={{ flex: 1 }}>
+            {/* Badges row */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' as const }}>
+              {course.discountPrice && course.discountPrice < course.price && (
+                <span style={{ backgroundColor: '#E91E63', color: 'white', fontSize: '11px', fontWeight: 800, padding: '4px 12px', borderRadius: '20px' }}>Bestseller</span>
+              )}
+              <span style={{ backgroundColor: 'rgba(255,255,255,0.15)', color: 'white', fontSize: '11px', fontWeight: 700, padding: '4px 12px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.3)' }}>{course.category}</span>
+              <span style={{ backgroundColor: course.level === 'Beginner' ? '#10B981' : course.level === 'Intermediate' ? '#3B82F6' : '#F59E0B', color: 'white', fontSize: '11px', fontWeight: 700, padding: '4px 12px', borderRadius: '20px' }}>{course.level}</span>
             </div>
 
-            {/* ── Right: pricing card ── */}
-            <div style={{ backgroundColor: 'white', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.3)', animation: 'fadeUp 0.4s ease 0.06s both' }}>
-              {/* Preview image */}
-              <div style={{ position: 'relative', height: '200px' }}>
-                <img src={resolveImage(course.imageUrl)} alt={course.title}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  onError={e => { e.currentTarget.src = 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&q=80'; }} />
-                <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <div style={{ width: '58px', height: '58px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'transform 0.2s' }}
-                    onMouseEnter={e => (e.currentTarget.style.transform = 'scale(1.08)')}
-                    onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}>
-                    <PlayCircle size={30} style={{ color: '#E91E63' }} />
-                  </div>
+            {/* Title */}
+            <h1 style={{ margin: '0 0 16px', fontSize: '38px', fontWeight: 800, color: 'white', fontFamily: 'Syne, sans-serif', lineHeight: 1.15 }}>
+              {course.title}
+            </h1>
+
+            {/* Description */}
+            <p style={{ margin: '0 0 24px', fontSize: '15px', color: '#CBD5E1', lineHeight: 1.7, maxWidth: '580px' }}>
+              {course.description}
+            </p>
+
+            {/* Instructor row */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+              <div style={{ width: '44px', height: '44px', borderRadius: '50%', backgroundColor: '#5B62B3', overflow: 'hidden', flexShrink: 0 }}>
+                {course.vendorId?.profileImage
+                  ? <img src={course.vendorId.profileImage} alt={course.vendorId.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: '16px' }}>{course.vendorId?.name?.[0] || 'V'}</div>
+                }
+              </div>
+              <div>
+                <p style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'white' }}>{course.vendorId?.name || course.instructorName || 'Instructor'}</p>
+                <p style={{ margin: 0, fontSize: '12px', color: '#94A3B8' }}>{course.instructorBio || 'Professional Instructor'}</p>
+              </div>
+            </div>
+
+            {/* Stats row */}
+            <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' as const, marginBottom: '32px' }}>
+              {[
+                { icon: '⭐', label: `${course.rating?.toFixed(1) || '0.0'} (${course.reviewCount || 0} reviews)` },
+                { icon: '⏱', label: `${course.duration || 0} hours` },
+                { icon: '📚', label: `${course.lessons?.length || 0} lessons` },
+                { icon: '🌐', label: 'English' },
+                { icon: '🎓', label: course.certificateIncluded ? 'Certificate' : 'No Certificate' },
+                { icon: '📍', label: course.courseFormat?.physicalClasses ? 'Physical + Online' : 'Online' },
+              ].map((stat, i) => (
+                <span key={i} style={{ fontSize: '13px', color: '#CBD5E1', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {stat.icon} {stat.label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Right — enrollment card */}
+          <div style={{ width: '380px', flexShrink: 0, backgroundColor: 'white', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 16px 48px rgba(0,0,0,0.3)' }}>
+            {/* Thumbnail with play button */}
+            <div style={{ position: 'relative' as const, height: '210px', backgroundColor: '#1e1b4b', overflow: 'hidden' }}>
+              {course.imageUrl
+                ? <img src={resolveImage(course.imageUrl)} alt={course.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, #1e1b4b, #5B62B3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '48px' }}>🎓</div>
+              }
+              <div style={{ position: 'absolute' as const, inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: '56px', height: '56px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.95)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="#E91E63"><polygon points="5,3 19,12 5,21"/></svg>
                 </div>
               </div>
+            </div>
 
-              <div style={{ padding: '24px' }}>
-                {/* Price */}
-                <div style={{ marginBottom: '20px' }}>
-                  {course.discountPrice ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '34px', fontWeight: 800, color: '#E91E63', letterSpacing: '-0.02em' }}>Rs. {course.discountPrice.toLocaleString()}</span>
-                      <span style={{ fontSize: '18px', color: '#94A3B8', textDecoration: 'line-through' }}>Rs. {course.price.toLocaleString()}</span>
-                      <span style={{ padding: '3px 10px', borderRadius: '6px', backgroundColor: '#E91E63', color: 'white', fontSize: '12px', fontWeight: 700 }}>
-                        {calcDiscount(course.price, course.discountPrice)}% OFF
-                      </span>
-                    </div>
-                  ) : (
-                    <span style={{ fontSize: '34px', fontWeight: 800, color: '#1A1C30', letterSpacing: '-0.02em' }}>Rs. {course.price.toLocaleString()}</span>
-                  )}
-                </div>
+            {/* Price + CTA */}
+            <div style={{ padding: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+                <span style={{ fontSize: '28px', fontWeight: 800, color: '#111', fontFamily: 'Syne, sans-serif' }}>
+                  Rs. {course.discountPrice || course.price}
+                </span>
+                {course.discountPrice && course.discountPrice < course.price && (
+                  <>
+                    <span style={{ fontSize: '16px', color: '#9CA3AF', textDecoration: 'line-through' }}>Rs. {course.price}</span>
+                    <span style={{ backgroundColor: '#E91E63', color: 'white', fontSize: '11px', fontWeight: 800, padding: '3px 8px', borderRadius: '6px' }}>
+                      {Math.round((1 - (course.discountPrice / course.price)) * 100)}% OFF
+                    </span>
+                  </>
+                )}
+              </div>
 
-                {/* Enroll button */}
-                <button className="cd-enroll" onClick={handleEnroll} disabled={enrolling}
-                  style={{ width: '100%', padding: '16px', borderRadius: '14px', border: 'none', backgroundColor: enrolling ? '#F9A8C9' : '#E91E63', color: 'white', fontSize: '15px', fontWeight: 800, cursor: enrolling ? 'wait' : 'pointer', fontFamily: 'Montserrat, sans-serif', letterSpacing: '0.04em', boxShadow: '0 6px 20px rgba(233,30,99,0.3)', marginBottom: '12px' }}>
-                  {enrolling ? 'Enrolling…' : 'Enroll Now'}
+              {/* Enroll button — check enrollment limit */}
+              {isEnrolled ? (
+                <button onClick={() => navigate(`/client/learning/${course._id}`)}
+                  style={{ width: '100%', padding: '14px', backgroundColor: '#10B981', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 800, fontSize: '15px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif', marginBottom: '12px' }}>
+                  Continue Learning →
                 </button>
-
-                {/* Chat with Vendor button */}
-                <button
-                  onClick={() => {
-                    const vendorId = course.vendorId?._id || course.vendorId;
-                    if (vendorId) {
-                      navigate(`/client/messages?vendorId=${vendorId}`);
-                    }
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '14px',
-                    borderRadius: '14px',
-                    border: '1px solid #5B62B3',
-                    backgroundColor: 'white',
-                    color: '#5B62B3',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    fontFamily: 'Montserrat, sans-serif',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    marginBottom: '12px',
-                    transition: 'all 0.2s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#5B62B3';
-                    e.currentTarget.style.color = 'white';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'white';
-                    e.currentTarget.style.color = '#5B62B3';
-                  }}
-                >
-                  <MessageCircle size={16} />
-                  Chat with Vendor
-                </button>
-
-                <p style={{ margin: '0 0 20px', textAlign: 'center', fontSize: '12px', color: '#94A3B8' }}>30-Day Money-Back Guarantee</p>
-
-                <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: '18px' }}>
-                  <p style={{ margin: '0 0 12px', fontSize: '13px', fontWeight: 700, color: '#1A1C30' }}>This course includes:</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
-                    {[
-                      course.courseFormat?.onlineContent && `${course.courseFormat.theoryHours}h online content`,
-                      course.courseFormat?.physicalClasses && `${course.courseFormat.practicalHours}h hands-on practice`,
-                      'Lifetime access',
-                      course.certificateIncluded && 'Certificate of completion',
-                    ].filter(Boolean).map(item => (
-                      <div key={item as string} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <CheckCircle size={15} style={{ color: '#10B981', flexShrink: 0 }} />
-                        <span style={{ fontSize: '13px', color: '#475569' }}>{item as string}</span>
-                      </div>
-                    ))}
-                  </div>
+              ) : enrollmentCount >= 2 ? (
+                <div style={{ marginBottom: '12px' }}>
+                  <button disabled style={{ width: '100%', padding: '14px', backgroundColor: '#E5E7EB', color: '#9CA3AF', border: 'none', borderRadius: '12px', fontWeight: 800, fontSize: '15px', cursor: 'not-allowed', fontFamily: 'Montserrat, sans-serif' }}>
+                    Enrollment Full (Max 2 Courses)
+                  </button>
+                  <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#E91E63', textAlign: 'center' as const }}>
+                    Complete or drop a course to enroll in a new one.
+                  </p>
                 </div>
+              ) : (
+                <button onClick={handleEnrollClick}
+                  style={{ width: '100%', padding: '14px', backgroundColor: '#E91E63', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 800, fontSize: '15px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif', marginBottom: '12px' }}>
+                  {enrolling ? 'Enrolling...' : 'Enroll Now'}
+                </button>
+              )}
+
+              {/* Action row */}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button style={{ flex: 1, padding: '10px', backgroundColor: 'white', border: '1.5px solid #E5E7EB', borderRadius: '10px', cursor: 'pointer', fontSize: '18px' }}>🤍</button>
+                <button style={{ flex: 1, padding: '10px', backgroundColor: 'white', border: '1.5px solid #E5E7EB', borderRadius: '10px', cursor: 'pointer', fontSize: '18px' }}>🔗</button>
+              </div>
+
+              {/* What's included */}
+              <div style={{ marginTop: '20px', borderTop: '1px solid #F3F4F6', paddingTop: '16px' }}>
+                {[
+                  '✓ Lifetime access',
+                  '✓ QR Certificate on completion',
+                  '✓ Mobile friendly',
+                  '✓ Direct instructor messaging',
+                ].map((item, i) => (
+                  <p key={i} style={{ margin: '0 0 8px', fontSize: '13px', color: '#374151' }}>{item}</p>
+                ))}
               </div>
             </div>
           </div>
@@ -445,47 +542,47 @@ const CourseDetail: React.FC = () => {
             {/* ── CURRICULUM ───────────────────────────────── */}
             {activeTab === 'curriculum' && (
               <div>
-                <h2 style={{ margin: '0 0 8px', fontSize: '28px', fontWeight: 800, letterSpacing: '-0.02em', color: '#1A1C30' }}>Course Curriculum</h2>
-                <p style={{ margin: '0 0 28px', color: '#64748B', fontSize: '14px' }}>
-                  {course.lessons.length} lessons across {modules.length} modules
-                </p>
-
-                {modules.length === 0 ? (
-                  <div style={{ padding: '40px', textAlign: 'center', backgroundColor: 'white', borderRadius: '16px', border: '1.5px dashed #E2E8F0' }}>
-                    <p style={{ color: '#94A3B8', fontSize: '15px' }}>No lessons added yet.</p>
-                  </div>
-                ) : modules.map((mod, mi) => (
-                  <div key={mi} className="cd-module"
-                    style={{ backgroundColor: 'white', borderRadius: '16px', marginBottom: '14px', border: '1.5px solid #EDF0F7', overflow: 'hidden', boxShadow: '0 2px 8px rgba(15,23,42,0.04)' }}>
-
+                <h2 style={{ margin: '0 0 24px', fontSize: '24px', fontWeight: 800, color: '#111', fontFamily: 'Syne, sans-serif' }}>Course Curriculum</h2>
+                {(course.modules || [{ title: 'Course Content', lessons: course.lessons || [] }]).map((module: any, mIdx: number) => (
+                  <div key={mIdx} style={{ marginBottom: '12px' }}>
                     {/* Module header */}
-                    <div onClick={() => toggleModule(mi)} style={{ padding: '20px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <h3 style={{ margin: '0 0 4px', fontSize: '17px', fontWeight: 700, color: '#1A1C30' }}>{mod.title}</h3>
-                        <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 500 }}>{mod.lessons.length} lessons</span>
+                    <div
+                      onClick={() => setOpenModule(openModule === mIdx ? -1 : mIdx)}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', border: '1.5px solid #E5E7EB', borderRadius: openModule === mIdx ? '12px 12px 0 0' : '12px', cursor: 'pointer', backgroundColor: 'white' }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '16px', fontWeight: 700, color: '#111' }}>
+                          Module {mIdx + 1}: {module.title}
+                        </span>
+                        <span style={{ backgroundColor: '#F3F4F6', color: '#6B7280', fontSize: '12px', fontWeight: 600, padding: '2px 10px', borderRadius: '12px' }}>
+                          {module.lessons?.length || 0} lessons
+                        </span>
                       </div>
-                      <div style={{ color: '#5B62B3' }}>
-                        {expanded.includes(mi) ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                      </div>
+                      <span style={{ fontSize: '16px', color: '#6B7280', transition: 'transform 0.2s', display: 'inline-block', transform: openModule === mIdx ? 'rotate(180deg)' : 'rotate(0)' }}>▾</span>
                     </div>
 
                     {/* Lessons */}
-                    {expanded.includes(mi) && (
-                      <div style={{ paddingBottom: '8px' }}>
-                        {mod.lessons.map((lesson, li) => (
-                          <div key={li} className="cd-lesson-row"
-                            style={{ padding: '14px 24px', borderTop: '1px solid #F8FAFC', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'background 0.18s' }}>
-                            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                              {lesson.contentType === 'video'
-                                ? <PlayCircle size={17} style={{ color: '#5B62B3', flexShrink: 0 }} />
-                                : <FileText size={17} style={{ color: '#64748B', flexShrink: 0 }} />}
-                              <span style={{ fontSize: '14px', color: '#1A1C30' }}>{lesson.title}</span>
-                              {lesson.isPreview && (
-                                <span style={{ fontSize: '10px', backgroundColor: '#EEF2FF', color: '#5B62B3', padding: '2px 8px', borderRadius: '999px', fontWeight: 700, letterSpacing: '0.06em' }}>Preview</span>
-                              )}
+                    {openModule === mIdx && (
+                      <div style={{ border: '1.5px solid #E5E7EB', borderTop: 'none', borderRadius: '0 0 12px 12px', overflow: 'hidden' }}>
+                        {(module.lessons || []).map((lesson: any, lIdx: number) => (
+                          <div key={lIdx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', backgroundColor: lIdx % 2 === 0 ? '#FAFAFA' : 'white', borderTop: lIdx > 0 ? '1px solid #F3F4F6' : 'none' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                              {/* Video icon — pink */}
+                              <div style={{ width: '32px', height: '32px', borderRadius: '8px', backgroundColor: '#FFF0F5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                  <rect x="2" y="4" width="15" height="16" rx="2" stroke="#E91E63" strokeWidth="2"/>
+                                  <path d="M17 8.5l5-3v13l-5-3V8.5z" fill="#E91E63"/>
+                                </svg>
+                              </div>
+                              <div>
+                                <p style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#111' }}>{lesson.title}</p>
+                                <p style={{ margin: 0, fontSize: '12px', color: '#9CA3AF' }}>{lesson.duration || 0} minutes • {lesson.contentType || 'Video'}</p>
+                              </div>
                             </div>
-                            {lesson.duration > 0 && (
-                              <span style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 500, flexShrink: 0, marginLeft: '12px' }}>{lesson.duration} min</span>
+                            {(lesson.isPreview || lIdx === 0) && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#6B7280', fontSize: '13px', fontWeight: 600 }}>
+                                <span style={{ fontSize: '16px' }}>👁</span> Preview
+                              </div>
                             )}
                           </div>
                         ))}
@@ -641,9 +738,9 @@ const CourseDetail: React.FC = () => {
               <p style={{ margin: '0 0 18px', fontSize: '14px', color: 'rgba(255,255,255,0.7)', lineHeight: 1.6 }}>
                 Not satisfied? Get a full refund within 30 days, no questions asked.
               </p>
-              <button className="cd-enroll" onClick={handleEnroll} disabled={enrolling}
+              <button className="cd-enroll" onClick={handleEnrollClick} disabled={enrolling}
                 style={{ width: '100%', padding: '14px', borderRadius: '12px', border: 'none', backgroundColor: enrolling ? '#F9A8C9' : '#E91E63', color: 'white', fontSize: '14px', fontWeight: 700, cursor: enrolling ? 'wait' : 'pointer', fontFamily: 'Montserrat, sans-serif', boxShadow: '0 6px 20px rgba(233,30,99,0.35)' }}>
-                {enrolling ? 'Enrolling…' : `Enroll Now · Rs. ${(course.discountPrice || course.price).toLocaleString()}`}
+                {enrolling ? 'Processing...' : `Enroll Now · Rs. ${(course.discountPrice || course.price).toLocaleString()}`}
               </button>
             </div>
 
@@ -675,6 +772,74 @@ const CourseDetail: React.FC = () => {
           onSuccess={handleReviewSuccess}
           onCancel={() => setShowForm(false)}
         />
+      )}
+
+      {/* ═══ PAYMENT MODAL ═════════════════════════════════════ */}
+      {showPaymentModal && (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 9999, fontFamily: 'Montserrat, sans-serif',
+        }}>
+          <div style={{
+            backgroundColor: 'white', borderRadius: '20px', padding: '32px',
+            width: '100%', maxWidth: '420px',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 800, fontFamily: 'Syne, sans-serif', color: '#111' }}>
+                Complete Enrollment
+              </h3>
+              <button onClick={() => setShowPaymentModal(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#9CA3AF' }}>×</button>
+            </div>
+
+            {/* Course summary */}
+            <div style={{ backgroundColor: '#F8F9FC', borderRadius: '12px', padding: '16px', marginBottom: '24px' }}>
+              <p style={{ margin: '0 0 4px', fontWeight: 700, fontSize: '14px', color: '#111' }}>{course.title}</p>
+              <p style={{ margin: 0, fontSize: '22px', fontWeight: 800, color: '#E91E63' }}>Rs. {course.price?.toLocaleString()}</p>
+            </div>
+
+            <p style={{ fontSize: '13px', fontWeight: 700, color: '#374151', marginBottom: '12px' }}>
+              Choose Payment Method:
+            </p>
+
+            {/* eSewa button */}
+            <button
+              onClick={handleEsewaPayment}
+              disabled={enrolling}
+              style={{
+                width: '100%', padding: '14px', marginBottom: '10px',
+                backgroundColor: '#60BB46', color: 'white',
+                border: 'none', borderRadius: '12px', fontWeight: 800,
+                fontSize: '15px', cursor: enrolling ? 'not-allowed' : 'pointer',
+                fontFamily: 'Montserrat, sans-serif',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
+              }}
+            >
+              <span style={{ fontSize: '20px' }}>💚</span>
+              Pay with eSewa
+            </button>
+
+            {/* Mock payment for testing */}
+            <button
+              onClick={handleMockPayment}
+              disabled={enrolling}
+              style={{
+                width: '100%', padding: '12px',
+                backgroundColor: 'white', color: '#5B62B3',
+                border: '1.5px solid #5B62B3', borderRadius: '12px', fontWeight: 700,
+                fontSize: '13px', cursor: enrolling ? 'not-allowed' : 'pointer',
+                fontFamily: 'Montserrat, sans-serif',
+              }}
+            >
+              {enrolling ? 'Processing...' : '🧪 Test Enrollment (Mock Payment)'}
+            </button>
+
+            <p style={{ fontSize: '11px', color: '#9CA3AF', textAlign: 'center', marginTop: '12px' }}>
+              🔒 Secure payment · 30-day money back guarantee
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );

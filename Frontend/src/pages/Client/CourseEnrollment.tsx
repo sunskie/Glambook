@@ -8,6 +8,7 @@ import {
 import courseService from '../../services/api/courseService';
 import enrollmentService from '../../services/api/enrollmentService';
 import { useAuth } from '../../context/AuthContext';
+import EsewaPaymentButton from '../../components/common/EsewaPaymentButton';
 
 interface Course {
   _id: string;
@@ -48,6 +49,8 @@ const CourseEnrollment: React.FC = () => {
   const [enrolling, setEnrolling] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+  const [createdEnrollmentId, setCreatedEnrollmentId] = useState<string | null>(null);
+  const [enrollmentStep, setEnrollmentStep] = useState<'details' | 'payment'>('details');
   const [formData, setFormData] = useState({
     clientName: user?.name || '',
     clientEmail: user?.email || '',
@@ -96,7 +99,7 @@ const CourseEnrollment: React.FC = () => {
       setError('');
       setCurrentStep(2);
     } else if (currentStep === 2) {
-      if (!formData.clientName || !formData.clientEmail || !formData.clientPhone) {
+      if (!formData.clientName || !formData.clientEmail) {
         setError('Please fill all required fields');
         return;
       }
@@ -119,11 +122,11 @@ const CourseEnrollment: React.FC = () => {
       };
 
       const response = await enrollmentService.createEnrollment(enrollmentData);
-
-      // Navigate to success page
-      navigate(`/client/enrollment-success/${response.data._id}`);
+      const enrollmentId = response.data?._id;
+      setCreatedEnrollmentId(enrollmentId);
+      setEnrollmentStep('payment');
     } catch (error: any) {
-      setError(error.response?.data?.message || 'Enrollment failed');
+      setError(error.response?.data?.message || 'Failed to create enrollment');
     } finally {
       setEnrolling(false);
     }
@@ -131,7 +134,7 @@ const CourseEnrollment: React.FC = () => {
 
   if (loading) {
     return (
-      <div style={{ 
+      <div style={{
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
@@ -145,7 +148,7 @@ const CourseEnrollment: React.FC = () => {
 
   if (!course) {
     return (
-      <div style={{ 
+      <div style={{
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
@@ -153,6 +156,64 @@ const CourseEnrollment: React.FC = () => {
         fontFamily: 'Montserrat, sans-serif'
       }}>
         Course not found
+      </div>
+    );
+  }
+
+  if (enrollmentStep === 'payment' && createdEnrollmentId && course) {
+    return (
+      <div style={{ minHeight: '100vh', backgroundColor: '#FAFAFA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Montserrat, sans-serif', padding: '24px' }}>
+        <div style={{ maxWidth: '480px', margin: '40px auto', padding: '32px', backgroundColor: 'white', borderRadius: '20px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', fontFamily: 'Montserrat, sans-serif' }}>
+          <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#111', marginBottom: '8px' }}>Complete Payment</h2>
+          <p style={{ color: '#6B7280', fontSize: '14px', marginBottom: '24px' }}>Your enrollment is ready. Pay to activate access to the course.</p>
+
+          <div style={{ backgroundColor: '#fafafa', borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ color: '#6B7280', fontSize: '14px' }}>Course</span>
+              <span style={{ fontWeight: 600, color: '#111', fontSize: '14px' }}>{course.title}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ color: '#6B7280', fontSize: '14px' }}>Instructor</span>
+              <span style={{ fontWeight: 600, color: '#111', fontSize: '14px' }}>{course.instructorName}</span>
+            </div>
+            <div style={{ height: '1px', backgroundColor: '#E5E7EB', margin: '12px 0' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontWeight: 700, color: '#111', fontSize: '16px' }}>Total</span>
+              <span style={{ fontWeight: 700, color: '#5B62B3', fontSize: '16px' }}>Rs. {(course.discountPrice || course.price)?.toLocaleString()}</span>
+            </div>
+          </div>
+
+          <div style={{
+            backgroundColor: '#FFF9C4',
+            border: '1px solid #F59E0B',
+            borderRadius: '10px',
+            padding: '16px',
+            marginBottom: '16px',
+            fontFamily: 'Montserrat, sans-serif',
+          }}>
+            <p style={{ margin: '0 0 8px', fontWeight: 700, fontSize: '13px', color: '#92400E' }}>
+              🧪 eSewa Test Mode — Use these credentials:
+            </p>
+            <p style={{ margin: '0 0 4px', fontSize: '13px', color: '#92400E' }}>
+              <strong>eSewa ID:</strong> 9806800001 (or 9806800002, 9806800003, 9806800004, 9806800005)
+            </p>
+            <p style={{ margin: '0 0 4px', fontSize: '13px', color: '#92400E' }}>
+              <strong>Password:</strong> Nepal@123
+            </p>
+            <p style={{ margin: 0, fontSize: '11px', color: '#B45309' }}>
+              These are official eSewa sandbox test accounts. Do not use real credentials.
+            </p>
+          </div>
+
+          <EsewaPaymentButton type="enrollment" id={createdEnrollmentId} amount={course.discountPrice || course.price} />
+
+          <button
+            onClick={() => navigate(`/client/enrollment-success/${createdEnrollmentId}`)}
+            style={{ width: '100%', marginTop: '12px', padding: '14px', backgroundColor: 'white', color: '#6B7280', border: '2px solid #E5E7EB', borderRadius: '12px', fontWeight: 600, fontSize: '14px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}
+          >
+            Pay Later (Cash at Venue)
+          </button>
+        </div>
       </div>
     );
   }
@@ -534,7 +595,7 @@ const CourseEnrollment: React.FC = () => {
                         marginBottom: '8px',
                         fontFamily: 'Montserrat, sans-serif'
                       }}>
-                        Phone Number *
+                        Phone Number (optional)
                       </label>
                       <input
                         type="tel"
