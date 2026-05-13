@@ -1,584 +1,288 @@
-// Frontend/src/pages/Client/MyCourses.tsx
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  BookOpen, Clock, Award, TrendingUp, PlayCircle,
-  Calendar, MapPin, Users, CheckCircle 
-} from 'lucide-react';
-import enrollmentService from '../../services/api/enrollmentService';
+import api from '../../utils/api';
+import ClientSidebar from '../../components/Client/ClientSidebar';
 
-interface Enrollment {
-  _id: string;
-  courseId: {
-    _id: string;
-    title: string;
-    category: string;
-    imageUrl: string | null;
-    duration: number;
-    instructorName: string;
-    lessons: any[];
-  };
-  status: string;
-  progress: number;
-  completedLessons: number;
-  totalLessons: number;
-  batchStartDate: string | null;
-  batchLocation: string | null;
-  enrollmentDate: string;
-  certificateIssued: boolean;
-}
-
-const MyCourses: React.FC = () => {
+const MyCourses = () => {
   const navigate = useNavigate();
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [enrollments, setEnrollments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'all' | 'enrolled' | 'completed'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'inprogress' | 'completed'>('all');
+  const BASE_URL = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
 
   useEffect(() => {
-    fetchEnrollments();
-  }, [activeTab]);
+    api.get('/enrollments/my')
+      .then((res: any) => {
+        const data =
+          res?.data?.enrollments ||
+          res?.data?.data?.enrollments ||
+          (Array.isArray(res?.data) ? res.data : null) ||
+          res?.enrollments ||
+          [];
+        setEnrollments(data);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
-  const fetchEnrollments = async () => {
-    try {
-      setLoading(true);
-      const response = await enrollmentService.getClientEnrollments(
-        activeTab === 'all' ? undefined : activeTab
-      );
-      setEnrollments(response.data || []);
-    } catch (error) {
-      console.error('Error fetching enrollments:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const getProgress = (e: any) => e.progress ?? e.completionPercentage ?? 0;
 
-  const getImageUrl = (imageUrl: string | null) => {
-    if (!imageUrl) return 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=500&q=80';
-    if (imageUrl.startsWith('http')) return imageUrl;
-    return `http://localhost:5000${imageUrl}`;
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'enrolled': return '#2196F3';
-      case 'completed': return '#4CAF50';
-      case 'cancelled': return '#F44336';
-      default: return '#999';
-    }
-  };
-
-  const getStatusLabel = (status: string) => {
-    return status.charAt(0).toUpperCase() + status.slice(1);
-  };
-
-  // Calculate stats
   const stats = {
-    totalCourses: enrollments.length,
-    inProgress: enrollments.filter(e => e.status === 'enrolled').length,
-    completed: enrollments.filter(e => e.status === 'completed').length,
-    certificates: enrollments.filter(e => e.certificateIssued).length,
+    total: enrollments.filter(e => e.status !== 'dropped').length,
+    inProgress: enrollments.filter(e => getProgress(e) < 100 && e.status !== 'dropped').length,
+    completed: enrollments.filter(e => getProgress(e) >= 100).length,
+    certificates: enrollments.filter(e => getProgress(e) >= 100 && (e.courseId?.certificate || e.course?.certificate)).length,
   };
+
+  const filtered = enrollments.filter(e => {
+    if (e.status === 'dropped') return false;
+    if (activeTab === 'inprogress') return getProgress(e) < 100;
+    if (activeTab === 'completed') return getProgress(e) >= 100;
+    return true;
+  });
+
+  // Match sidebar width from ClientSidebar
+  const SIDEBAR_WIDTH = 280;
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#FAFAFA', padding: '24px' }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#F8F9FC', fontFamily: 'Montserrat, sans-serif' }}>
+      <ClientSidebar />
+
+      <div style={{ marginLeft: `${SIDEBAR_WIDTH}px`, flex: 1, padding: '40px', overflowY: 'auto' as const, minHeight: '100vh' }}>
+
         {/* Header */}
-        <div style={{ marginBottom: '32px' }}>
-          <h1 style={{
-            fontSize: '32px',
-            fontWeight: 700,
-            marginBottom: '8px',
-            fontFamily: 'Syne, sans-serif'
-          }}>
-            My Courses
-          </h1>
-          <p style={{
-            fontSize: '16px',
-            color: '#666',
-            fontFamily: 'Montserrat, sans-serif'
-          }}>
-            Continue your learning journey
+        <h1 style={{ margin: '0 0 4px', fontSize: '32px', fontWeight: 800, color: '#111', fontFamily: 'Syne, sans-serif' }}>
+          My Courses
+        </h1>
+        <p style={{ margin: '0 0 24px', fontSize: '14px', color: '#6B7280' }}>
+          Continue your learning journey
+        </p>
+
+        {/* Enrollment limit banner */}
+        <div style={{
+          backgroundColor: stats.inProgress >= 2 ? '#FFF0F5' : '#F0FDF4',
+          border: `1px solid ${stats.inProgress >= 2 ? '#FBCFE8' : '#BBF7D0'}`,
+          borderRadius: '12px', padding: '12px 20px', marginBottom: '28px',
+          display: 'flex', alignItems: 'center', gap: '10px',
+        }}>
+          <span style={{ fontSize: '18px' }}>{stats.inProgress >= 2 ? '⚠️' : '✅'}</span>
+          <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: stats.inProgress >= 2 ? '#BE185D' : '#166534' }}>
+            {stats.inProgress >= 2
+              ? 'You have reached the maximum of 2 active enrollments. Complete or drop a course to enroll in a new one.'
+              : `You have ${2 - stats.inProgress} enrollment slot${2 - stats.inProgress === 1 ? '' : 's'} available.`}
           </p>
         </div>
 
-        {/* Stats Cards */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-          gap: '20px',
-          marginBottom: '32px'
-        }}>
-          <div style={{
-            backgroundColor: 'white',
-            padding: '24px',
-            borderRadius: '12px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+        {/* Stats row */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '32px' }}>
+          {[
+            { label: 'Total Courses', value: stats.total, icon: '📚' },
+            { label: 'In Progress', value: stats.inProgress, icon: '📈' },
+            { label: 'Completed', value: stats.completed, icon: '🏅' },
+            { label: 'Certificates', value: stats.certificates, icon: '🎓' },
+          ].map((stat, i) => (
+            <div key={i} style={{
+              backgroundColor: 'white', borderRadius: '16px', padding: '20px 24px',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
               <div>
-                <p style={{
-                  fontSize: '14px',
-                  color: '#666',
-                  marginBottom: '8px',
-                  fontFamily: 'Montserrat, sans-serif'
-                }}>
-                  My Courses
-                </p>
-                <p style={{
-                  fontSize: '32px',
-                  fontWeight: 700,
-                  color: '#111',
-                  fontFamily: 'Montserrat, sans-serif'
-                }}>
-                  {stats.totalCourses}
-                </p>
+                <p style={{ margin: '0 0 4px', fontSize: '12px', color: '#6B7280', fontWeight: 600 }}>{stat.label}</p>
+                <p style={{ margin: 0, fontSize: '30px', fontWeight: 800, color: '#111', fontFamily: 'Syne, sans-serif' }}>{stat.value}</p>
               </div>
-              <div style={{
-                width: '48px',
-                height: '48px',
-                backgroundColor: '#E3F2FD',
-                borderRadius: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <BookOpen size={24} style={{ color: '#2196F3' }} />
-              </div>
+              <span style={{ fontSize: '28px' }}>{stat.icon}</span>
             </div>
-          </div>
-
-          <div style={{
-            backgroundColor: 'white',
-            padding: '24px',
-            borderRadius: '12px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-              <div>
-                <p style={{
-                  fontSize: '14px',
-                  color: '#666',
-                  marginBottom: '8px',
-                  fontFamily: 'Montserrat, sans-serif'
-                }}>
-                  In Progress
-                </p>
-                <p style={{
-                  fontSize: '32px',
-                  fontWeight: 700,
-                  color: '#111',
-                  fontFamily: 'Montserrat, sans-serif'
-                }}>
-                  {stats.inProgress}
-                </p>
-              </div>
-              <div style={{
-                width: '48px',
-                height: '48px',
-                backgroundColor: '#FFF3E0',
-                borderRadius: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <TrendingUp size={24} style={{ color: '#FF9800' }} />
-              </div>
-            </div>
-          </div>
-
-          <div style={{
-            backgroundColor: 'white',
-            padding: '24px',
-            borderRadius: '12px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-              <div>
-                <p style={{
-                  fontSize: '14px',
-                  color: '#666',
-                  marginBottom: '8px',
-                  fontFamily: 'Montserrat, sans-serif'
-                }}>
-                  Completed
-                </p>
-                <p style={{
-                  fontSize: '32px',
-                  fontWeight: 700,
-                  color: '#111',
-                  fontFamily: 'Montserrat, sans-serif'
-                }}>
-                  {stats.completed}
-                </p>
-              </div>
-              <div style={{
-                width: '48px',
-                height: '48px',
-                backgroundColor: '#E8F5E9',
-                borderRadius: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <CheckCircle size={24} style={{ color: '#4CAF50' }} />
-              </div>
-            </div>
-          </div>
-
-          <div style={{
-            backgroundColor: 'white',
-            padding: '24px',
-            borderRadius: '12px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-              <div>
-                <p style={{
-                  fontSize: '14px',
-                  color: '#666',
-                  marginBottom: '8px',
-                  fontFamily: 'Montserrat, sans-serif'
-                }}>
-                  Certificates
-                </p>
-                <p style={{
-                  fontSize: '32px',
-                  fontWeight: 700,
-                  color: '#111',
-                  fontFamily: 'Montserrat, sans-serif'
-                }}>
-                  {stats.certificates}
-                </p>
-              </div>
-              <div style={{
-                width: '48px',
-                height: '48px',
-                backgroundColor: '#FCE4EC',
-                borderRadius: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <Award size={24} style={{ color: '#E91E63' }} />
-              </div>
-            </div>
-          </div>
+          ))}
         </div>
 
         {/* Tabs */}
-        <div style={{
-          display: 'flex',
-          gap: '24px',
-          marginBottom: '24px',
-          borderBottom: '2px solid #eee'
-        }}>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
           {[
-            { key: 'all', label: 'All Courses', count: stats.totalCourses },
-            { key: 'enrolled', label: 'In Progress', count: stats.inProgress },
-            { key: 'completed', label: 'Completed', count: stats.completed }
+            { key: 'all', label: `All Courses (${stats.total})` },
+            { key: 'inprogress', label: `In Progress (${stats.inProgress})` },
+            { key: 'completed', label: `Completed (${stats.completed})` },
           ].map(tab => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key as any)}
               style={{
-                background: 'none',
-                border: 'none',
-                padding: '16px 0',
-                fontSize: '15px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                color: activeTab === tab.key ? '#E91E63' : '#666',
-                borderBottom: activeTab === tab.key ? '3px solid #E91E63' : 'none',
-                marginBottom: '-2px',
-                fontFamily: 'Montserrat, sans-serif'
+                padding: '10px 22px',
+                border: `2px solid ${activeTab === tab.key ? '#E91E63' : '#E5E7EB'}`,
+                borderRadius: '24px',
+                backgroundColor: activeTab === tab.key ? '#E91E63' : 'white',
+                color: activeTab === tab.key ? 'white' : '#374151',
+                fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+                fontFamily: 'Montserrat, sans-serif', transition: 'all 0.15s',
               }}
             >
-              {tab.label} ({tab.count})
+              {tab.label}
             </button>
           ))}
         </div>
 
-        {/* Courses Grid */}
+        {/* Content */}
         {loading ? (
-          <div style={{
-            textAlign: 'center',
-            padding: '60px',
-            fontFamily: 'Montserrat, sans-serif',
-            color: '#666'
-          }}>
-            Loading courses...
+          <div style={{ textAlign: 'center' as const, padding: '60px', color: '#9CA3AF', fontSize: '15px' }}>
+            Loading your courses...
           </div>
-        ) : enrollments.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <div style={{
-            textAlign: 'center',
-            padding: '60px'
+            textAlign: 'center' as const, padding: '60px',
+            backgroundColor: 'white', borderRadius: '20px',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
           }}>
-            <BookOpen size={64} style={{ color: '#ddd', marginBottom: '16px' }} />
-            <h3 style={{
-              fontSize: '20px',
-              fontWeight: 600,
-              color: '#999',
-              marginBottom: '8px',
-              fontFamily: 'Syne, sans-serif'
-            }}>
-              No courses found
-            </h3>
-            <p style={{
-              fontSize: '14px',
-              color: '#999',
-              marginBottom: '24px',
-              fontFamily: 'Montserrat, sans-serif'
-            }}>
-              Enroll in a course to start learning
+            <p style={{ fontSize: '48px', margin: '0 0 16px' }}>🎓</p>
+            <p style={{ fontSize: '18px', fontWeight: 700, color: '#111', margin: '0 0 8px' }}>No courses here yet</p>
+            <p style={{ fontSize: '14px', color: '#6B7280', margin: '0 0 24px' }}>
+              Browse our academy and enroll in up to 2 courses at a time.
             </p>
             <button
-              onClick={() => navigate('/client/courses')}
+              onClick={() => navigate('/client/browse/courses')}
               style={{
-                padding: '12px 24px',
-                backgroundColor: '#E91E63',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '14px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: 'Montserrat, sans-serif'
+                padding: '12px 28px', backgroundColor: '#E91E63', color: 'white',
+                border: 'none', borderRadius: '12px', fontWeight: 700,
+                fontSize: '14px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif',
               }}
             >
               Browse Courses
             </button>
           </div>
         ) : (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
-            gap: '24px'
-          }}>
-            {enrollments.map(enrollment => (
-              <div
-                key={enrollment._id}
-                style={{
-                  backgroundColor: 'white',
-                  borderRadius: '12px',
-                  overflow: 'hidden',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-                  transition: 'transform 0.2s',
-                  cursor: 'pointer'
-                }}
-                onClick={() => navigate(`/client/learning/${enrollment._id}`)}
-                onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-4px)'}
-                onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-              >
-                {/* Image with Status Badge */}
-                <div style={{ position: 'relative', height: '200px' }}>
-                  <img
-                    src={getImageUrl(enrollment.courseId.imageUrl)}
-                    alt={enrollment.courseId.title}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                  <div style={{
-                    position: 'absolute',
-                    top: '12px',
-                    right: '12px',
-                    backgroundColor: getStatusColor(enrollment.status),
-                    color: 'white',
-                    padding: '6px 12px',
-                    borderRadius: '20px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    fontFamily: 'Montserrat, sans-serif'
-                  }}>
-                    {getStatusLabel(enrollment.status)}
-                  </div>
+          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '20px' }}>
+            {filtered.map((enrollment: any) => {
+              const course = enrollment.courseId || enrollment.course || {};
+              const progress = getProgress(enrollment);
+              const isCompleted = progress >= 100;
+              const rawSrc = course.thumbnail || course.images?.[0] || '';
+              const imgSrc = rawSrc.startsWith('http') ? rawSrc : rawSrc ? `${BASE_URL}${rawSrc}` : '';
 
-                  {/* Progress Overlay */}
-                  {enrollment.status === 'enrolled' && (
+              return (
+                <div key={enrollment._id} style={{
+                  backgroundColor: 'white', borderRadius: '20px', overflow: 'hidden',
+                  boxShadow: '0 2px 16px rgba(0,0,0,0.07)', display: 'flex', minHeight: '200px',
+                }}>
+                  {/* Thumbnail */}
+                  <div style={{
+                    width: '280px', flexShrink: 0, position: 'relative' as const,
+                    backgroundColor: '#FFF0F5', overflow: 'hidden',
+                  }}>
                     <div style={{
-                      position: 'absolute',
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      backgroundColor: 'rgba(0,0,0,0.7)',
-                      padding: '12px 16px'
-                    }}>
-                      <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        marginBottom: '8px'
-                      }}>
-                        <span style={{
-                          fontSize: '12px',
-                          color: 'white',
-                          fontFamily: 'Montserrat, sans-serif'
-                        }}>
-                          Progress
-                        </span>
-                        <span style={{
-                          fontSize: '12px',
-                          color: 'white',
-                          fontWeight: 600,
-                          fontFamily: 'Montserrat, sans-serif'
-                        }}>
-                          {enrollment.progress}%
-                        </span>
-                      </div>
-                      <div style={{
-                        width: '100%',
-                        height: '6px',
-                        backgroundColor: 'rgba(255,255,255,0.3)',
-                        borderRadius: '3px',
-                        overflow: 'hidden'
-                      }}>
-                        <div style={{
-                          width: `${enrollment.progress}%`,
-                          height: '100%',
-                          backgroundColor: '#4CAF50',
-                          transition: 'width 0.3s'
-                        }} />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Content */}
-                <div style={{ padding: '20px' }}>
-                  <div style={{
-                    fontSize: '12px',
-                    color: '#E91E63',
-                    fontWeight: 600,
-                    marginBottom: '8px',
-                    fontFamily: 'Montserrat, sans-serif'
-                  }}>
-                    {enrollment.courseId.category}
-                  </div>
-
-                  <h3 style={{
-                    fontSize: '18px',
-                    fontWeight: 600,
-                    marginBottom: '8px',
-                    color: '#111',
-                    fontFamily: 'Syne, sans-serif',
-                    lineHeight: '1.4',
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden'
-                  }}>
-                    {enrollment.courseId.title}
-                  </h3>
-
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    marginBottom: '16px'
-                  }}>
-                    <BookOpen size={14} style={{ color: '#666' }} />
+                      position: 'absolute' as const, inset: 0,
+                      background: 'linear-gradient(135deg, #FFF0F5, #FBCFE8)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '48px', zIndex: 0,
+                    }}>🎓</div>
+                    {imgSrc && (
+                      <img
+                        src={imgSrc}
+                        alt={course.title}
+                        style={{ position: 'absolute' as const, inset: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 1 }}
+                        onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    )}
                     <span style={{
-                      fontSize: '13px',
-                      color: '#666',
-                      fontFamily: 'Montserrat, sans-serif'
+                      position: 'absolute' as const, top: '12px', left: '12px', zIndex: 2,
+                      backgroundColor: isCompleted ? '#10B981' : 'rgba(0,0,0,0.55)',
+                      color: 'white', fontSize: '10px', fontWeight: 800,
+                      padding: '4px 10px', borderRadius: '12px',
                     }}>
-                      by {enrollment.courseId.instructorName}
+                      {isCompleted ? 'Completed' : course.courseType || 'Online'}
                     </span>
                   </div>
 
-                  {/* Stats Row */}
+                  {/* Content */}
                   <div style={{
-                    display: 'flex',
-                    gap: '16px',
-                    paddingTop: '16px',
-                    borderTop: '1px solid #eee'
+                    flex: 1, padding: '24px 28px',
+                    display: 'flex', flexDirection: 'column' as const, justifyContent: 'space-between',
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <PlayCircle size={16} style={{ color: '#666' }} />
+                    <div>
                       <span style={{
-                        fontSize: '13px',
-                        color: '#666',
-                        fontFamily: 'Montserrat, sans-serif'
+                        fontSize: '11px', fontWeight: 700, color: '#E91E63',
+                        textTransform: 'uppercase' as const, letterSpacing: '1px',
                       }}>
-                        {enrollment.completedLessons}/{enrollment.totalLessons} lessons
+                        {course.category || 'Academy'}
                       </span>
+                      <h3 style={{ margin: '6px 0 4px', fontSize: '20px', fontWeight: 800, color: '#111', fontFamily: 'Syne, sans-serif' }}>
+                        {course.title || 'Course'}
+                      </h3>
+                      <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#6B7280' }}>
+                        by {course.vendorId?.name || 'Instructor'}
+                      </p>
+
+                      {/* Progress bar */}
+                      <div style={{ marginBottom: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>🖥 Theory Progress</span>
+                          <span style={{ fontSize: '13px', fontWeight: 800, color: '#E91E63' }}>{progress}%</span>
+                        </div>
+                        <div style={{ height: '8px', backgroundColor: '#F3F4F6', borderRadius: '4px', overflow: 'hidden' }}>
+                          <div style={{
+                            height: '100%', width: `${progress}%`,
+                            backgroundColor: isCompleted ? '#10B981' : '#5B62B3',
+                            borderRadius: '4px', transition: 'width 0.4s',
+                          }} />
+                        </div>
+                      </div>
+
+                      {/* Meta */}
+                      <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
+                        {course.lessons?.length > 0 && (
+                          <span style={{ fontSize: '12px', color: '#6B7280' }}>📚 {course.lessons.length} lessons</span>
+                        )}
+                        {course.duration && (
+                          <span style={{ fontSize: '12px', color: '#6B7280' }}>⏱ {course.duration} hours</span>
+                        )}
+                      </div>
+
+                      {/* Next lesson */}
+                      {!isCompleted && enrollment.nextLesson && (
+                        <div style={{ marginTop: '12px', backgroundColor: '#FFF0F5', borderRadius: '10px', padding: '10px 14px' }}>
+                          <p style={{ margin: 0, fontSize: '11px', color: '#9CA3AF', fontWeight: 600 }}>Next Lesson</p>
+                          <p style={{ margin: '2px 0 0', fontSize: '13px', fontWeight: 700, color: '#111' }}>{enrollment.nextLesson}</p>
+                        </div>
+                      )}
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Clock size={16} style={{ color: '#666' }} />
-                      <span style={{
-                        fontSize: '13px',
-                        color: '#666',
-                        fontFamily: 'Montserrat, sans-serif'
-                      }}>
-                        {enrollment.courseId.duration}h
+                    {/* Footer */}
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #F3F4F6',
+                    }}>
+                      <span style={{ fontSize: '12px', color: '#9CA3AF' }}>
+                        Last accessed:{' '}
+                        {enrollment.lastAccessedAt
+                          ? new Date(enrollment.lastAccessedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                          : 'Not yet'}
                       </span>
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        {isCompleted && course.certificate && (
+                          <button
+                            onClick={() => navigate(`/client/courses/${course._id}/certificate`)}
+                            style={{
+                              padding: '10px 18px', backgroundColor: '#10B981', color: 'white',
+                              border: 'none', borderRadius: '10px', fontWeight: 700,
+                              fontSize: '13px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif',
+                            }}
+                          >
+                            View Certificate 🎓
+                          </button>
+                        )}
+                        <button
+                          onClick={() => navigate(`/client/courses/${course._id}/learn`)}
+                          style={{
+                            padding: '10px 22px', backgroundColor: '#E91E63', color: 'white',
+                            border: 'none', borderRadius: '10px', fontWeight: 700,
+                            fontSize: '13px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif',
+                          }}
+                        >
+                          {isCompleted ? 'Review Course' : 'Continue Learning'}
+                        </button>
+                      </div>
                     </div>
                   </div>
-
-                  {/* Batch Info */}
-                  {enrollment.batchStartDate && enrollment.batchLocation && (
-                    <div style={{
-                      marginTop: '12px',
-                      padding: '12px',
-                      backgroundColor: '#F5F5F5',
-                      borderRadius: '8px'
-                    }}>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        marginBottom: '6px'
-                      }}>
-                        <Calendar size={14} style={{ color: '#666' }} />
-                        <span style={{
-                          fontSize: '12px',
-                          color: '#666',
-                          fontFamily: 'Montserrat, sans-serif'
-                        }}>
-                          Starts: {new Date(enrollment.batchStartDate).toLocaleDateString()}
-                        </span>
-                      </div>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px'
-                      }}>
-                        <MapPin size={14} style={{ color: '#666' }} />
-                        <span style={{
-                          fontSize: '12px',
-                          color: '#666',
-                          fontFamily: 'Montserrat, sans-serif'
-                        }}>
-                          {enrollment.batchLocation}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Certificate Badge */}
-                  {enrollment.certificateIssued && (
-                    <div style={{
-                      marginTop: '12px',
-                      padding: '8px 12px',
-                      backgroundColor: '#E8F5E9',
-                      borderRadius: '6px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}>
-                      <Award size={16} style={{ color: '#4CAF50' }} />
-                      <span style={{
-                        fontSize: '12px',
-                        color: '#2E7D32',
-                        fontWeight: 600,
-                        fontFamily: 'Montserrat, sans-serif'
-                      }}>
-                        Certificate Issued
-                      </span>
-                    </div>
-                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
