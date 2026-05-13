@@ -1,197 +1,83 @@
-// backend/src/models/Enrollment.model.ts
-import mongoose, { Document, Schema } from 'mongoose';
-
-export interface ILessonProgress {
-  lessonId: string;
-  completed: boolean;
-  completedAt: Date | null;
-  timeSpent: number; // in seconds
-}
+import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IEnrollment extends Document {
-  courseId: mongoose.Types.ObjectId;
+  // Core
   clientId: mongoose.Types.ObjectId;
-  vendorId: mongoose.Types.ObjectId;
-  
-  // Batch selection
-  selectedBatchId: string | null;
-  batchStartDate: Date | null;
-  batchEndDate: Date | null;
-  batchLocation: string | null;
-  
-  // Enrollment details
-  enrollmentDate: Date;
-  status: 'enrolled' | 'completed' | 'cancelled' | 'refunded';
-  
-  // Progress tracking
-  progress: number; // 0-100
-  lessonsProgress: ILessonProgress[];
-  completedLessons: number;
-  totalLessons: number;
-  
-  // Practical attendance
-  practicalAttendance: {
-    date: Date;
-    attended: boolean;
-    notes: string;
-  }[];
-  
-  // Payment
-  totalPrice: number;
-  paymentStatus: 'pending' | 'completed' | 'failed' | 'refunded';
-  paymentDate: Date | null;
-  
-  // Certificate
+  courseId: mongoose.Types.ObjectId;
+  vendorId?: mongoose.Types.ObjectId;
+  status: 'active' | 'completed' | 'dropped' | 'cancelled' | 'enrolled';
+
+  // Progress tracking (new)
+  progress: number;
+  completedLessons: mongoose.Types.ObjectId[];
+  lastAccessedAt?: Date;
+  lastLessonId?: mongoose.Types.ObjectId;
+  nextLesson?: string;
+  timeSpentMinutes: number;
+  enrolledAt: Date;
+
+  // Old progress fields
+  lessonsProgress?: any[];
+  totalLessons?: number;
+  completionDate?: Date;
+
+  // Quiz (new)
+  quizScore?: number;
+  quizAttempts: number;
+  quizPassed: boolean;
+
+  // Certificate (new)
   certificateIssued: boolean;
-  certificateUrl: string | null;
-  certificateIssuedDate: Date | null;
-  
-  // Dates
-  startDate: Date;
-  completionDate: Date | null;
-  
-  // Client info
-  clientName: string;
-  clientEmail: string;
-  clientPhone: string;
-  
-  createdAt: Date;
-  updatedAt: Date;
+  certificateId?: string;
+  certificateIssuedAt?: Date;
+
+  // Old fields
+  practicalAttendance?: any[];
+  selectedBatchId?: mongoose.Types.ObjectId;
+  paymentStatus?: string;
+  paymentDate?: Date;
 }
 
-const lessonProgressSchema = new Schema({
-  lessonId: { type: String, required: true },
-  completed: { type: Boolean, default: false },
-  completedAt: { type: Date, default: null },
-  timeSpent: { type: Number, default: 0 },
-});
-
-const attendanceSchema = new Schema({
-  date: { type: Date, required: true },
-  attended: { type: Boolean, required: true },
-  notes: { type: String, default: '' },
-});
-
-const enrollmentSchema = new Schema<IEnrollment>(
-  {
-    courseId: {
-      type: Schema.Types.ObjectId,
-      ref: 'Course',
-      required: true,
-      index: true,
-    },
-    clientId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-      index: true,
-    },
-    vendorId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-      index: true,
-    },
-    selectedBatchId: {
-      type: String,
-      default: null,
-    },
-    batchStartDate: {
-      type: Date,
-      default: null,
-    },
-    batchEndDate: {
-      type: Date,
-      default: null,
-    },
-    batchLocation: {
-      type: String,
-      default: null,
-    },
-    enrollmentDate: {
-      type: Date,
-      default: Date.now,
-    },
-    status: {
-      type: String,
-      enum: ['enrolled', 'completed', 'cancelled', 'refunded'],
-      default: 'enrolled',
-      index: true,
-    },
-    progress: {
-      type: Number,
-      default: 0,
-      min: 0,
-      max: 100,
-    },
-    lessonsProgress: {
-      type: [lessonProgressSchema],
-      default: [],
-    },
-    completedLessons: {
-      type: Number,
-      default: 0,
-    },
-    totalLessons: {
-      type: Number,
-      default: 0,
-    },
-    practicalAttendance: {
-      type: [attendanceSchema],
-      default: [],
-    },
-    totalPrice: {
-      type: Number,
-      required: true,
-    },
-    paymentStatus: {
-      type: String,
-      enum: ['pending', 'completed', 'failed', 'refunded'],
-      default: 'pending',
-    },
-    paymentDate: {
-      type: Date,
-      default: null,
-    },
-    certificateIssued: {
-      type: Boolean,
-      default: false,
-    },
-    certificateUrl: {
-      type: String,
-      default: null,
-    },
-    certificateIssuedDate: {
-      type: Date,
-      default: null,
-    },
-    startDate: {
-      type: Date,
-      default: Date.now,
-    },
-    completionDate: {
-      type: Date,
-      default: null,
-    },
-    clientName: {
-      type: String,
-      required: true,
-    },
-    clientEmail: {
-      type: String,
-      required: true,
-    },
-    clientPhone: {
-      type: String,
-      required: true,
-    },
+const EnrollmentSchema = new Schema<IEnrollment>({
+  // Core
+  clientId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  courseId: { type: Schema.Types.ObjectId, ref: 'Course', required: true },
+  vendorId: { type: Schema.Types.ObjectId, ref: 'User' },
+  status: {
+    type: String,
+    enum: ['active', 'completed', 'dropped', 'cancelled', 'enrolled'],
+    default: 'active',
   },
-  { timestamps: true }
-);
 
-// Compound indexes
-enrollmentSchema.index({ clientId: 1, status: 1 });
-enrollmentSchema.index({ vendorId: 1, status: 1 });
-enrollmentSchema.index({ courseId: 1, clientId: 1 });
+  // Progress tracking (new)
+  progress: { type: Number, default: 0, min: 0, max: 100 },
+  completedLessons: [{ type: Schema.Types.ObjectId }],
+  lastAccessedAt: { type: Date, default: Date.now },
+  lastLessonId: { type: Schema.Types.ObjectId },
+  nextLesson: { type: String },
+  timeSpentMinutes: { type: Number, default: 0 },
+  enrolledAt: { type: Date, default: Date.now },
 
-export default mongoose.model<IEnrollment>('Enrollment', enrollmentSchema);
+  // Old progress fields
+  lessonsProgress: [{ type: Schema.Types.Mixed }],
+  totalLessons: { type: Number, default: 0 },
+  completionDate: { type: Date },
+
+  // Quiz (new)
+  quizScore: { type: Number },
+  quizAttempts: { type: Number, default: 0 },
+  quizPassed: { type: Boolean, default: false },
+
+  // Certificate (new)
+  certificateIssued: { type: Boolean, default: false },
+  certificateId: { type: String },
+  certificateIssuedAt: { type: Date },
+
+  // Old fields
+  practicalAttendance: [{ type: Schema.Types.Mixed }],
+  selectedBatchId: { type: Schema.Types.ObjectId },
+  paymentStatus: { type: String },
+  paymentDate: { type: Date },
+}, { timestamps: true });
+
+export default mongoose.model<IEnrollment>('Enrollment', EnrollmentSchema);

@@ -12,14 +12,16 @@ const isValidObjectId = (id: string): boolean => {
 // Create Enrollment (Client enrolls in course with batch selection)
 export const createEnrollment = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { 
-      courseId, 
-      selectedBatchId, 
-      clientName, 
-      clientPhone, 
-      clientEmail 
+    const {
+      courseId,
+      selectedBatchId,
+      clientName,
+      clientPhone,
+      clientEmail,
+      paymentMethod,
+      transactionId,
     } = req.body;
-    
+
     const clientId = (req as any).user._id;
 
     // Validation
@@ -36,18 +38,40 @@ export const createEnrollment = async (req: Request, res: Response): Promise<voi
       return;
     }
 
+    // Check if client has phone number in profile
+    const User = (await import('../models/User.model')).default;
+    const client = await User.findById(clientId).select('name email phone role');
+    if (!client) {
+      res.status(404).json({ success: false, message: 'User not found' });
+      return;
+    }
+
+    if (!client.phone || String(client.phone).trim() === '') {
+      res.status(400).json({
+        success: false,
+        message: 'Please add your phone number in your profile before enrolling',
+        requiresPhone: true,
+      });
+      return;
+    }
+
     // Get course details
     const course = await Course.findById(courseId).populate('vendorId');
-    
+
     if (!course) {
       res.status(404).json({ success: false, message: 'Course not found' });
       return;
     }
 
+    if (!course.vendorId) {
+      res.status(400).json({ success: false, message: 'Course has no vendor assigned' });
+      return;
+    }
+
     if (course.status !== 'approved' && course.status !== 'active') {
-      res.status(400).json({ 
-        success: false, 
-        message: 'This course is not available for enrollment' 
+      res.status(400).json({
+        success: false,
+        message: 'This course is not available for enrollment'
       });
       return;
     }
@@ -67,6 +91,20 @@ export const createEnrollment = async (req: Request, res: Response): Promise<voi
       return;
     }
 
+    // Enforce max 2 active enrollments
+    const activeCount = await Enrollment.countDocuments({
+      clientId,
+      status: { $ne: 'dropped' },
+      progress: { $lt: 100 },
+    });
+    if (activeCount >= 2) {
+      res.status(400).json({
+        success: false,
+        message: 'You can only be enrolled in 2 active courses at a time. Complete or drop a course before enrolling in a new one.',
+      });
+      return;
+    }
+
     // Handle batch selection for physical classes
     let batchData: any = {
       selectedBatchId: null,
@@ -81,9 +119,9 @@ export const createEnrollment = async (req: Request, res: Response): Promise<voi
       );
 
       if (!selectedBatch) {
-        res.status(400).json({ 
-          success: false, 
-          message: 'Selected batch not found' 
+        res.status(400).json({
+          success: false,
+          message: 'Selected batch not found'
         });
         return;
       }
@@ -119,7 +157,11 @@ export const createEnrollment = async (req: Request, res: Response): Promise<voi
     }));
 
     // Calculate price (use discount if available)
-    const finalPrice = course.discountPrice || course.price;
+    const finalPrice = course.discountPrice || course.price || 0;
+
+    // Determine payment status
+    const isFree = !finalPrice || finalPrice === 0;
+    const paymentStatus = isFree ? 'free' : (paymentMethod ? 'paid' : 'pending');
 
     // Create enrollment
     const enrollment = await Enrollment.create({
@@ -132,7 +174,9 @@ export const createEnrollment = async (req: Request, res: Response): Promise<voi
       clientPhone: clientPhone?.trim() || "",
       clientEmail: clientEmail.toLowerCase().trim(),
       status: 'enrolled',
-      paymentStatus: 'pending', // Will be updated after payment
+      paymentStatus,
+      paymentMethod: paymentMethod || (isFree ? 'free' : null),
+      transactionId: transactionId || null,
       progress: 0,
       lessonsProgress,
       completedLessons: 0,
@@ -155,6 +199,7 @@ export const createEnrollment = async (req: Request, res: Response): Promise<voi
       clientId,
       courseId,
       batchId: selectedBatchId,
+      paymentStatus,
     });
 
     res.status(201).json({
@@ -186,9 +231,8 @@ export const getClientEnrollments = async (req: Request, res: Response): Promise
     const enrollments = await Enrollment.find(query)
       .populate({
         path: 'courseId',
-        select: 'title category imageUrl price duration level instructorName lessons batches',
+        populate: { path: 'vendorId', select: 'name profileImage' }
       })
-      .populate('vendorId', 'name email phone')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -200,7 +244,7 @@ export const getClientEnrollments = async (req: Request, res: Response): Promise
     res.status(200).json({
       success: true,
       count: enrollments.length,
-      data: enrollments,
+      enrollments,
     });
   } catch (error: any) {
     logger.error('Get client enrollments error:', error);
@@ -283,7 +327,7 @@ export const updateLessonProgress = async (req: Request, res: Response): Promise
     }
 
     // Find and update lesson progress
-    const lessonProgress = enrollment.lessonsProgress.find(
+    const lessonProgress = (enrollment.lessonsProgress ?? []).find(
       (lp: any) => lp.lessonId === lessonId
     );
 
@@ -302,15 +346,13 @@ export const updateLessonProgress = async (req: Request, res: Response): Promise
     }
 
     // Recalculate completed lessons count
-    const completedCount = enrollment.lessonsProgress.filter(
+    const completedCount = (enrollment.lessonsProgress ?? []).filter(
       (lp: any) => lp.completed
     ).length;
 
-    enrollment.completedLessons = completedCount;
-
     // Calculate progress percentage
-    if (enrollment.totalLessons > 0) {
-      enrollment.progress = Math.round((completedCount / enrollment.totalLessons) * 100);
+    if ((enrollment.totalLessons ?? 0) > 0) {
+      enrollment.progress = Math.round((completedCount / (enrollment.totalLessons ?? 1)) * 100);
     }
 
     // Auto-complete course if all lessons done
@@ -409,13 +451,14 @@ export const markAttendance = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    if (enrollment.vendorId.toString() !== vendorId.toString()) {
+    if (!enrollment.vendorId || enrollment.vendorId.toString() !== vendorId.toString()) {
       res.status(403).json({ success: false, message: 'Not authorized' });
       return;
     }
 
     // Add or update attendance
     const attendanceDate = new Date(date);
+    if (!enrollment.practicalAttendance) enrollment.practicalAttendance = [];
     const existingIndex = enrollment.practicalAttendance.findIndex(
       (att: any) => new Date(att.date).toDateString() === attendanceDate.toDateString()
     );
@@ -547,7 +590,7 @@ export const updateEnrollmentStatus = async (req: Request, res: Response): Promi
       return;
     }
 
-    if (enrollment.vendorId.toString() !== vendorId.toString()) {
+    if (!enrollment.vendorId || enrollment.vendorId.toString() !== vendorId.toString()) {
       res.status(403).json({ success: false, message: 'Not authorized' });
       return;
     }
@@ -558,7 +601,7 @@ export const updateEnrollmentStatus = async (req: Request, res: Response): Promi
       enrollment.progress = 100;
       enrollment.completionDate = new Date();
       // Mark all lessons as completed
-      enrollment.lessonsProgress.forEach((lp: any) => {
+      (enrollment.lessonsProgress ?? []).forEach((lp: any) => {
         if (!lp.completed) {
           lp.completed = true;
           lp.completedAt = new Date();
@@ -627,5 +670,129 @@ export const updatePaymentStatus = async (req: Request, res: Response): Promise<
       message: 'Failed to update payment status',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
+  }
+};
+
+// Mark a lesson as complete and update progress
+export const markLessonComplete = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { enrollmentId, lessonId } = req.body;
+
+    const enrollment = await Enrollment.findOne({ _id: enrollmentId, clientId: user._id });
+    if (!enrollment) {
+      res.status(404).json({ success: false, message: 'Enrollment not found' });
+      return;
+    }
+
+    const lessonObjId = new mongoose.Types.ObjectId(lessonId);
+    const alreadyDone = (enrollment.completedLessons as mongoose.Types.ObjectId[])
+      .some((id: mongoose.Types.ObjectId) => id.toString() === lessonObjId.toString());
+
+    if (!alreadyDone) {
+      (enrollment.completedLessons as mongoose.Types.ObjectId[]).push(lessonObjId);
+    }
+
+    const course = await Course.findById(enrollment.courseId);
+    const totalLessons = course?.lessons?.length || 1;
+    enrollment.progress = Math.round(
+      ((enrollment.completedLessons as mongoose.Types.ObjectId[]).length / totalLessons) * 100
+    );
+    enrollment.lastAccessedAt = new Date();
+    enrollment.lastLessonId = lessonObjId;
+
+    if (enrollment.progress >= 100) {
+      enrollment.status = 'completed';
+    }
+
+    await enrollment.save();
+    res.json({ success: true, progress: enrollment.progress, enrollment });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Submit quiz
+export const submitQuiz = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { enrollmentId, answers } = req.body;
+
+    const enrollment = await Enrollment.findOne({ _id: enrollmentId, clientId: user._id })
+      .populate('courseId');
+    if (!enrollment) return res.status(404).json({ success: false, message: 'Enrollment not found' });
+    if (enrollment.progress < 100) return res.status(400).json({ success: false, message: 'Complete all lessons before taking the quiz' });
+
+    const course = enrollment.courseId as any;
+    const questions = course?.quiz?.questions || [];
+    if (questions.length === 0) return res.status(400).json({ success: false, message: 'No quiz available' });
+
+    // Calculate score
+    let correct = 0;
+    questions.forEach((q: any, i: number) => {
+      if (answers[i] !== undefined && answers[i] === q.correctAnswer) correct++;
+    });
+    const score = Math.round((correct / questions.length) * 100);
+    const passed = score >= 70;
+
+    enrollment.quizScore = score;
+    enrollment.quizAttempts = (enrollment.quizAttempts || 0) + 1;
+    enrollment.quizPassed = passed;
+
+    if (passed && !enrollment.certificateIssued) {
+      enrollment.certificateIssued = true;
+      enrollment.certificateId = `GLB-${new Date().getFullYear()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+      enrollment.certificateIssuedAt = new Date();
+    }
+
+    await enrollment.save();
+    res.json({ success: true, score, passed, certificateId: enrollment.certificateId });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Get certificate data
+export const getCertificate = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { courseId } = req.params;
+
+    const enrollment = await Enrollment.findOne({ clientId: user._id, courseId })
+      .populate({ path: 'courseId', populate: { path: 'vendorId', select: 'name' } })
+      .populate('clientId', 'name email');
+
+    if (!enrollment?.certificateIssued) {
+      return res.status(404).json({ success: false, message: 'Certificate not yet issued' });
+    }
+
+    res.json({ success: true, data: { enrollment, certificateId: enrollment.certificateId } });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Public certificate verification
+export const verifyCertificate = async (req: Request, res: Response) => {
+  try {
+    const { certificateId } = req.params;
+    const enrollment = await Enrollment.findOne({ certificateId })
+      .populate({ path: 'courseId', populate: { path: 'vendorId', select: 'name' } })
+      .populate('clientId', 'name email');
+
+    if (!enrollment) return res.status(404).json({ success: false, message: 'Certificate not found or invalid' });
+
+    res.json({
+      success: true,
+      data: {
+        studentName: (enrollment.clientId as any)?.name,
+        courseName: (enrollment.courseId as any)?.title,
+        completedAt: enrollment.certificateIssuedAt,
+        certificateId: enrollment.certificateId,
+        issuedBy: (enrollment.courseId as any)?.vendorId?.name || 'GlamBook Academy',
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
   }
 };
