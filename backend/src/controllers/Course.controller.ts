@@ -15,9 +15,6 @@ export const createCourse = async (req: Request, res: Response): Promise<void> =
   try {
     console.log('CREATE COURSE body:', JSON.stringify(req.body, null, 2));
     console.log('CREATE COURSE files:', req.files);
-    console.log('CREATE COURSE file:', req.file);
-
-    console.log('VALIDATION STARTED');
 
     const {
       title,
@@ -33,7 +30,6 @@ export const createCourse = async (req: Request, res: Response): Promise<void> =
       instructorName,
       instructorBio,
       certificateIncluded,
-      lessons,
       batches,
     } = req.body;
 
@@ -53,35 +49,47 @@ export const createCourse = async (req: Request, res: Response): Promise<void> =
     if (!instructorName?.trim()) errors.push('Instructor name is required');
 
     if (errors.length > 0) {
-      console.log('VALIDATION ERRORS:', errors);
-      res.status(400).json({ success: false, message: 'Validation failed', errors });
+      res.status(400).json({ success: false, message: errors[0], errors });
       return;
     }
 
-    // Process lessons from form data — all fields optional
-    const lessonsData = req.body.lessons ?
-      (Array.isArray(req.body.lessons) ? req.body.lessons : [req.body.lessons])
+    // Process lessons — parse metadata sent as JSON string
+    const lessonsRaw = req.body.lessons;
+    const lessonsData = lessonsRaw
+      ? (typeof lessonsRaw === 'string' ? JSON.parse(lessonsRaw) : lessonsRaw)
       : [];
+    const lessonsArray = Array.isArray(lessonsData) ? lessonsData : [lessonsData];
 
-    const processedLessons = lessonsData.map((lesson: any, index: number) => {
-      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    const videoFiles = files?.['lessonVideo'] || [];
+    const pdfFiles = files?.['lessonPdf'] || [];
 
-      // Try to find uploaded video for this lesson
-      const videoFiles = files?.['lessonVideo'] || files?.['video'] || [];
-      const pdfFiles = files?.['lessonPdf'] || files?.['pdf'] || [];
-
+    const processedLessons = lessonsArray.map((lesson: any, index: number) => {
       const videoFile = videoFiles[index];
       const pdfFile = pdfFiles[index];
+
+      // Duration: use what vendor entered, no minimum enforced
+      const lessonDuration = parseInt(lesson.duration) || 0;
+
+      // Max 2 hours (120 min) only
+      if (lesson.contentType === 'video' && lessonDuration > 120) {
+        throw new Error(
+          `Lesson ${index + 1} ("${lesson.title || `Lesson ${index + 1}`}"): video cannot exceed 2 hours (120 min). Got ${lessonDuration} min.`
+        );
+      }
 
       return {
         title: lesson.title || `Lesson ${index + 1}`,
         description: lesson.description || '',
-        contentType: lesson.contentType || lesson.type || 'video',
-        duration: parseInt(lesson.duration) || 0,
+        contentType: lesson.contentType || 'video',
+        duration: lessonDuration,
         isPreview: lesson.isPreview === 'true' || lesson.isPreview === true,
-        videoUrl: videoFile ? `/uploads/courses/videos/${videoFile.filename}` : (lesson.videoUrl || ''),
-        pdfUrl: pdfFile ? `/uploads/courses/pdfs/${pdfFile.filename}` : (lesson.pdfUrl || ''),
-        order: index,
+        contentUrl: videoFile
+          ? `/uploads/courses/videos/${videoFile.filename}`
+          : pdfFile
+          ? `/uploads/courses/pdfs/${pdfFile.filename}`
+          : (lesson.contentUrl || ''),
+        orderIndex: index,
       };
     });
 
@@ -93,18 +101,21 @@ export const createCourse = async (req: Request, res: Response): Promise<void> =
       : (req.body.thumbnail || '');
 
     // Parse JSON fields
-    const parsedLearning = whatYouWillLearn ?
-      (typeof whatYouWillLearn === 'string' ? JSON.parse(whatYouWillLearn) : whatYouWillLearn) : [];
+    const parsedLearning = whatYouWillLearn
+      ? (typeof whatYouWillLearn === 'string' ? JSON.parse(whatYouWillLearn) : whatYouWillLearn)
+      : [];
 
-    const parsedRequirements = requirements ?
-      (typeof requirements === 'string' ? JSON.parse(requirements) : requirements) : [];
+    const parsedRequirements = requirements
+      ? (typeof requirements === 'string' ? JSON.parse(requirements) : requirements)
+      : [];
 
-    const parsedFormat = courseFormat ?
-      (typeof courseFormat === 'string' ? JSON.parse(courseFormat) : courseFormat) :
-      { theoryHours: 0, practicalHours: 0, onlineContent: true, physicalClasses: true };
+    const parsedFormat = courseFormat
+      ? (typeof courseFormat === 'string' ? JSON.parse(courseFormat) : courseFormat)
+      : { theoryHours: 0, practicalHours: 0, onlineContent: true, physicalClasses: false };
 
-    const parsedBatches = batches ?
-      (typeof batches === 'string' ? JSON.parse(batches) : batches) : [];
+    const parsedBatches = batches
+      ? (typeof batches === 'string' ? JSON.parse(batches) : batches)
+      : [];
 
     const course = await Course.create({
       title: title.trim(),
@@ -136,13 +147,16 @@ export const createCourse = async (req: Request, res: Response): Promise<void> =
     });
   } catch (error: any) {
     logger.error('Create course error:', error);
-    if (req.file) {
-      deleteFile(`uploads/courses/${req.file.filename}`);
-    }
 
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map((err: any) => err.message);
-      res.status(400).json({ success: false, message: 'Validation failed', errors: messages });
+      res.status(400).json({ success: false, message: messages[0], errors: messages });
+      return;
+    }
+
+    // Handles the 2-hour throw from processedLessons
+    if (error.message?.includes('video cannot exceed')) {
+      res.status(400).json({ success: false, message: error.message });
       return;
     }
 
@@ -161,19 +175,8 @@ export const getAllCourses = async (req: Request, res: Response) => {
 
     const filter: any = {};
 
-    // Temporarily return all courses (remove status filter for debugging)
-    // Uncomment this for production:
-    // if (req.user?.role === 'client') {
-    //   filter.status = { $in: ['approved', 'active'] };
-    // }
-
-    if (category) {
-      filter.category = category;
-    }
-
-    if (level) {
-      filter.level = level;
-    }
+    if (category) filter.category = category;
+    if (level) filter.level = level;
 
     if (priceMin || priceMax) {
       filter.price = {};
@@ -195,15 +198,9 @@ export const getAllCourses = async (req: Request, res: Response) => {
       .skip((Number(page) - 1) * Number(limit))
       .lean();
 
-    const total = await Course.countDocuments(filter);
+    res.json({ success: true, courses, total: courses.length });
 
-    res.json({
-      success: true,
-      courses,
-      total: courses.length,
-    });
-
-    logger.info('Courses retrieved', { count: courses.length, userRole: req.user?.role });
+    logger.info('Courses retrieved', { count: courses.length });
   } catch (error: any) {
     logger.error('Error fetching courses', { error: error.message });
     res.status(500).json({ message: 'Failed to fetch courses' });
@@ -293,26 +290,21 @@ export const updateCourse = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Don't allow changing vendorId or _id
     delete updateData.vendorId;
     delete updateData._id;
 
-    // Handle image upload
-    if (req.file) {
-      if (course.imageUrl) {
-        deleteFile(course.imageUrl);
-      }
-      updateData.imageUrl = `/uploads/courses/${req.file.filename}`;
+    // Handle thumbnail upload
+    const thumbnailFiles = (req.files as any)?.['thumbnail'];
+    const thumbnailFile = thumbnailFiles?.[0];
+    if (thumbnailFile) {
+      if (course.imageUrl) deleteFile(course.imageUrl);
+      updateData.imageUrl = `/uploads/courses/thumbnails/${thumbnailFile.filename}`;
     }
 
     // Parse JSON fields
     ['whatYouWillLearn', 'requirements', 'courseFormat', 'lessons', 'batches'].forEach(field => {
       if (updateData[field] && typeof updateData[field] === 'string') {
-        try {
-          updateData[field] = JSON.parse(updateData[field]);
-        } catch (e) {
-          // Keep as is if parsing fails
-        }
+        try { updateData[field] = JSON.parse(updateData[field]); } catch {}
       }
     });
 
@@ -329,7 +321,6 @@ export const updateCourse = async (req: Request, res: Response): Promise<void> =
   } catch (error: any) {
     logger.error('Update course error:', error);
     if (req.file) deleteFile(`uploads/courses/${req.file.filename}`);
-
     res.status(500).json({
       success: false,
       message: 'Failed to update course',
@@ -365,9 +356,7 @@ export const deleteCourse = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    if (course.imageUrl) {
-      deleteFile(course.imageUrl);
-    }
+    if (course.imageUrl) deleteFile(course.imageUrl);
 
     await Course.findByIdAndDelete(id);
 
@@ -406,24 +395,19 @@ export const addLesson = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const newLesson = {
+    course.lessons.push({
       title,
-      description,
-      duration: parseInt(duration),
+      description: description || '',
+      duration: parseInt(duration) || 0,
       contentType,
       contentUrl: contentUrl || null,
       orderIndex: course.lessons.length + 1,
       isPreview: isPreview || false,
-    };
+    } as any);
 
-    course.lessons.push(newLesson as any);
     await course.save();
 
-    res.status(200).json({
-      success: true,
-      message: 'Lesson added successfully',
-      data: course,
-    });
+    res.status(200).json({ success: true, message: 'Lesson added successfully', data: course });
   } catch (error: any) {
     logger.error('Add lesson error:', error);
     res.status(500).json({
@@ -458,7 +442,7 @@ export const addBatch = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const newBatch = {
+    course.batches.push({
       startDate: new Date(startDate),
       endDate: new Date(endDate),
       location,
@@ -466,16 +450,11 @@ export const addBatch = async (req: Request, res: Response): Promise<void> => {
       seatsRemaining: parseInt(seatsTotal),
       schedule,
       status: 'upcoming',
-    };
+    } as any);
 
-    course.batches.push(newBatch as any);
     await course.save();
 
-    res.status(200).json({
-      success: true,
-      message: 'Batch added successfully',
-      data: course,
-    });
+    res.status(200).json({ success: true, message: 'Batch added successfully', data: course });
   } catch (error: any) {
     logger.error('Add batch error:', error);
     res.status(500).json({
