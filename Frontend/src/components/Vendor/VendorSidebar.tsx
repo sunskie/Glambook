@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, Compass, BookOpen, GraduationCap, Send, Bell, User, Calendar, Shield } from 'lucide-react';
+import { LayoutDashboard, Scissors, CalendarCheck, BookOpen, Clock, MessageSquare, Bell, User, Settings, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const PRIMARY = '#5B62B3';
@@ -11,15 +11,14 @@ const VendorSidebar: React.FC = () => {
   const { user } = useAuth();
 
   const sidebarItems = [
-    { icon: <Home size={20} />, label: 'Dashboard', path: '/vendor/dashboard' },
-    { icon: <Compass size={20} />, label: 'Services', path: '/vendor/services' },
-    { icon: <BookOpen size={20} />, label: 'Bookings', path: '/vendor/bookings' },
-    { icon: <Shield size={20} />, label: 'Disputes', path: '/vendor/disputes' },
-    { icon: <GraduationCap size={20} />, label: 'Courses', path: '/vendor/courses' },
-    { icon: <Calendar size={20} />, label: 'Availability', path: '/vendor/availability' },
-    { icon: <Send size={20} />, label: 'Messages', path: '/vendor/messages' },
-    { icon: <Bell size={20} />, label: 'Notifications', path: '/vendor/notifications' },
-    { icon: <User size={20} />, label: 'Profile', path: '/vendor/profile' },
+    { icon: <LayoutDashboard size={20} />, label: 'Dashboard', path: '/vendor/dashboard' },
+    { icon: <Scissors size={20} />, label: 'Services', path: '/vendor/services' },
+    { icon: <CalendarCheck size={20} />, label: 'Bookings', path: '/vendor/bookings' },
+    { icon: <AlertTriangle size={20} />, label: 'Disputes', path: '/vendor/disputes' },
+    { icon: <BookOpen size={20} />, label: 'Courses', path: '/vendor/courses' },
+    { icon: <Clock size={20} />, label: 'Availability', path: '/vendor/availability' },
+    { icon: <MessageSquare size={20} />, label: 'Messages', path: '/vendor/messages' },
+    { icon: <Settings size={20} />, label: 'Settings', path: '/vendor/settings' },
   ];
 
   return (

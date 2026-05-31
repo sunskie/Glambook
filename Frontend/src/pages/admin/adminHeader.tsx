@@ -2,77 +2,87 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  LogOut, User, LayoutDashboard, Users, Briefcase,
-  Scissors, Calendar, BookOpen, GraduationCap, Shield
+  LayoutDashboard, Users, Store,
+  BookOpen, DollarSign, AlertTriangle, BarChart2, Bell, Settings
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const AdminHeader: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
 
-  const isActive = (path: string) => {
-    return location.pathname.startsWith(path);
-  };
+  const isActive = (path: string) => location.pathname.startsWith(path);
 
   const navItems = [
     { path: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { path: '/admin/users', label: 'Users', icon: Users },
-    { path: '/admin/vendors', label: 'Vendors', icon: Briefcase },
-    { path: '/admin/services', label: 'Services', icon: Scissors },
-    { path: '/admin/courses', label: 'Courses', icon: BookOpen },
-    { path: '/admin/bookings', label: 'Bookings', icon: Calendar },
-    { path: '/admin/enrollments', label: 'Enrollments', icon: GraduationCap },
-    { path: '/admin/disputes', label: 'Disputes', icon: Shield },
-    { path: '/admin/profile', label: 'Profile', icon: User },
+    { path: '/admin/users',     label: 'Users',     icon: Users },
+    { path: '/admin/vendors',   label: 'Vendors',   icon: Store },
+    { path: '/admin/courses',   label: 'Courses',   icon: BookOpen },
+    { path: '/admin/disputes',  label: 'Disputes',  icon: AlertTriangle },
+    { path: '/admin/settings',  label: 'Settings',  icon: Settings },
   ];
 
   return (
-    <header style={{
-      backgroundColor: 'white',
-      borderBottom: '1px solid #E0E0E0',
-      padding: '16px 0',
-      position: 'sticky',
-      top: 0,
-      zIndex: 1000,
-      boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-    }}>
-      <div style={{
-        maxWidth: '1400px',
-        margin: '0 auto',
-        padding: '0 24px',
+    <>
+      {/* Sidebar */}
+      <aside style={{
+        width: '220px',
+        minHeight: '100vh',
+        backgroundColor: 'white',
+        borderRight: '1px solid #F0F0F0',
         display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
+        flexDirection: 'column',
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        zIndex: 100,
       }}>
+
         {/* Logo */}
         <div
           onClick={() => navigate('/admin/dashboard')}
           style={{
-            fontSize: '24px',
-            fontWeight: 700,
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            fontFamily: 'Syne, sans-serif',
-            cursor: 'pointer'
+            padding: '24px 20px 20px',
+            cursor: 'pointer',
+            borderBottom: '1px solid #F5F5F5',
           }}
         >
-          GlamBook Admin
+          <div style={{
+            fontSize: '22px',
+            fontWeight: 700,
+            color: '#1a1a2e',
+            fontFamily: 'Syne, sans-serif',
+            letterSpacing: '-0.3px'
+          }}>
+            GlamBook
+          </div>
+          <div style={{
+            fontSize: '11px',
+            fontWeight: 600,
+            color: '#aaa',
+            fontFamily: 'Montserrat, sans-serif',
+            letterSpacing: '1px',
+            textTransform: 'uppercase',
+            marginTop: '2px'
+          }}>
+            Admin Panel
+          </div>
         </div>
 
         {/* Navigation */}
         <nav style={{
+          flex: 1,
+          padding: '16px 12px',
           display: 'flex',
-          gap: '4px',
-          alignItems: 'center',
-          flexWrap: 'wrap'
+          flexDirection: 'column',
+          gap: '2px',
+          overflowY: 'auto',
         }}>
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
-            
+
             return (
               <button
                 key={item.path}
@@ -80,116 +90,87 @@ const AdminHeader: React.FC = () => {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  padding: '8px 12px',
-                  backgroundColor: active ? '#F3E5F5' : 'transparent',
-                  color: active ? '#7B1FA2' : '#666',
+                  gap: '10px',
+                  padding: '10px 12px',
+                  backgroundColor: active ? '#F5F3FF' : 'transparent',
+                  color: active ? '#6366F1' : '#666',
                   border: 'none',
-                  borderRadius: '8px',
+                  borderRadius: '10px',
                   fontSize: '13px',
                   fontWeight: active ? 600 : 500,
                   cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  fontFamily: 'Montserrat, sans-serif'
+                  textAlign: 'left',
+                  width: '100%',
+                  fontFamily: 'Montserrat, sans-serif',
+                  transition: 'background 0.15s, color 0.15s',
                 }}
                 onMouseEnter={(e) => {
                   if (!active) {
-                    e.currentTarget.style.backgroundColor = '#F5F5F5';
+                    e.currentTarget.style.backgroundColor = '#FAFAFA';
+                    e.currentTarget.style.color = '#1a1a2e';
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!active) {
                     e.currentTarget.style.backgroundColor = 'transparent';
+                    e.currentTarget.style.color = '#666';
                   }
                 }}
               >
-                <Icon size={16} />
+                <Icon size={17} />
                 {item.label}
               </button>
             );
           })}
         </nav>
 
-        {/* User Menu */}
+        {/* User Profile at bottom */}
         <div style={{
+          padding: '16px',
+          borderTop: '1px solid #F5F5F5',
           display: 'flex',
           alignItems: 'center',
-          gap: '16px'
+          gap: '10px',
         }}>
           <div style={{
+            width: '36px',
+            height: '36px',
+            borderRadius: '50%',
+            backgroundColor: '#F5F3FF',
             display: 'flex',
             alignItems: 'center',
-            gap: '12px',
-            padding: '8px 16px',
-            backgroundColor: '#F5F5F5',
-            borderRadius: '8px'
+            justifyContent: 'center',
+            fontSize: '14px',
+            fontWeight: 700,
+            color: '#6366F1',
+            fontFamily: 'Montserrat, sans-serif',
+            flexShrink: 0
           }}>
+            {user?.name?.charAt(0).toUpperCase() || 'A'}
+          </div>
+          <div style={{ overflow: 'hidden' }}>
             <div style={{
-              width: '32px',
-              height: '32px',
-              backgroundColor: '#7B1FA2',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'white',
-              fontSize: '14px',
+              fontSize: '13px',
               fontWeight: 600,
+              color: '#1a1a2e',
+              fontFamily: 'Montserrat, sans-serif',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}>
+              {user?.name || 'Admin'}
+            </div>
+            <div style={{
+              fontSize: '11px',
+              color: '#aaa',
               fontFamily: 'Montserrat, sans-serif'
             }}>
-              {user?.name?.charAt(0).toUpperCase() || 'A'}
-            </div>
-            <div>
-              <div style={{
-                fontSize: '14px',
-                fontWeight: 600,
-                color: '#111',
-                fontFamily: 'Montserrat, sans-serif'
-              }}>
-                {user?.name || 'Admin'}
-              </div>
-              <div style={{
-                fontSize: '12px',
-                color: '#666',
-                fontFamily: 'Montserrat, sans-serif'
-              }}>
-                Administrator
-              </div>
+              Administrator
             </div>
           </div>
-
-          <button
-            onClick={logout}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 16px',
-              backgroundColor: 'transparent',
-              color: '#F44336',
-              border: '1px solid #F44336',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: 'Montserrat, sans-serif',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#F44336';
-              e.currentTarget.style.color = 'white';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'transparent';
-              e.currentTarget.style.color = '#F44336';
-            }}
-          >
-            <LogOut size={18} />
-            Logout
-          </button>
         </div>
-      </div>
-    </header>
+      </aside>
+    </>
   );
 };
 

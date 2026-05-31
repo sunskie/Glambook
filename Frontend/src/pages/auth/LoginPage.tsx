@@ -1,9 +1,11 @@
 // Frontend/src/pages/auth/LoginPage.tsx
 import React, { useState } from 'react';
 import { Mail, Eye, EyeOff, Lock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 const LoginPage: React.FC = () => {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -300,18 +302,23 @@ const LoginPage: React.FC = () => {
                   Remember me
                 </span>
               </label>
-              <a 
-                href="#" 
+              <button
+                type="button"
+                onClick={() => navigate('/forgot-password')}
                 style={{ 
                   color: '#89A8E0', 
                   fontSize: '12px', 
                   fontWeight: 700,
                   textDecoration: 'none',
-                  fontFamily: 'Nunito Sans, sans-serif'
+                  fontFamily: 'Nunito Sans, sans-serif',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 0
                 }}
               >
                 Forgot Password?
-              </a>
+              </button>
             </div>
 
             {/* Login Button */}

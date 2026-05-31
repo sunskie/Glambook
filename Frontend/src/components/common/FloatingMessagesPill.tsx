@@ -10,8 +10,9 @@ const FloatingMessagesPill: React.FC = () => {
   const { user } = useAuth();
   const { state } = useChat();
 
+  const isAdminPage = location.pathname.startsWith('/admin');
   const hiddenPaths = ['/client/messages', '/vendor/messages', '/admin/messages', '/login', '/register', '/'];
-  if (!user || hiddenPaths.some(path => location.pathname === path || location.pathname.startsWith(path + '/'))) return null;
+  if (!user || isAdminPage || hiddenPaths.some(path => location.pathname === path || location.pathname.startsWith(path + '/'))) return null;
 
   // Determine which messages page to navigate to based on user role
   const getMessagesPath = () => {

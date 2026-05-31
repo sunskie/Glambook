@@ -1,24 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Coins, Clock, Tag, FileText } from 'lucide-react';
 import serviceService from '../../services/api/serviceService';
 import showToast from '../../components/common/Toast';
-import ImageUpload from '../../components/common/ImageUpload';
 import VendorSidebar from '../../components/Vendor/VendorSidebar';
-
-/**
- * CreateService Component
- * 
- * Form to create a new service
- * Validates all inputs before submission
- */
 
 const CreateService: React.FC = () => {
   const navigate = useNavigate();
 
-  // ========================================
-  // STATE MANAGEMENT
-  // ========================================
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -29,69 +17,48 @@ const CreateService: React.FC = () => {
   });
 
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<{[key: string]: string}>({});
+  const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({});
 
-  // Category options
   const categories = ['Hair', 'Makeup', 'Spa', 'Nails', 'Skincare', 'Massage', 'Other'];
 
-  // ========================================
-  // VALIDATION FUNCTIONS
-  // ========================================
   const validatePrice = (price: string): string => {
     const num = parseFloat(price);
-    if (isNaN(num) || num <= 0) {
-      return 'Price must be a positive number';
-    }
-    if (!/^\d+(\.\d{1,2})?$/.test(price)) {
-      return 'Price can have maximum 2 decimal places';
-    }
+    if (isNaN(num) || num <= 0) return 'Price must be a positive number';
+    if (!/^\d+(\.\d{1,2})?$/.test(price)) return 'Price can have maximum 2 decimal places';
     return '';
   };
 
   const validateDuration = (duration: string): string => {
     const num = parseInt(duration);
-    if (isNaN(num) || num <= 0) {
-      return 'Duration must be a positive number';
-    }
-    if (!Number.isInteger(num)) {
-      return 'Duration must be a whole number';
-    }
+    if (isNaN(num) || num <= 0) return 'Duration must be a positive number';
     return '';
   };
 
-  // ========================================
-  // EVENT HANDLERS
-  // ========================================
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    
-    setFormData({
-      ...formData,
-      [name]: value,
-    });
-
-    // Clear field error when user types
-    if (fieldErrors[name]) {
-      setFieldErrors({ ...fieldErrors, [name]: '' });
-    }
+    setFormData({ ...formData, [name]: value });
+    if (fieldErrors[name]) setFieldErrors({ ...fieldErrors, [name]: '' });
     if (error) setError('');
   };
 
   const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     let errorMessage = '';
+    if (name === 'price' && value) errorMessage = validatePrice(value);
+    else if (name === 'duration' && value) errorMessage = validateDuration(value);
+    if (errorMessage) setFieldErrors({ ...fieldErrors, [name]: errorMessage });
+  };
 
-    if (name === 'price' && value) {
-      errorMessage = validatePrice(value);
-    } else if (name === 'duration' && value) {
-      errorMessage = validateDuration(value);
-    }
-
-    if (errorMessage) {
-      setFieldErrors({ ...fieldErrors, [name]: errorMessage });
-    }
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSelectedImage(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setImagePreview(reader.result as string);
+    reader.readAsDataURL(file);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -99,20 +66,13 @@ const CreateService: React.FC = () => {
     setError('');
     setFieldErrors({});
 
-    // Validate all fields
-    const errors: {[key: string]: string} = {};
+    const errors: { [key: string]: string } = {};
 
-    if (!formData.title.trim()) {
-      errors.title = 'Title is required';
-    } else if (formData.title.trim().length < 3) {
-      errors.title = 'Title must be at least 3 characters';
-    }
+    if (!formData.title.trim()) errors.title = 'Title is required';
+    else if (formData.title.trim().length < 3) errors.title = 'Title must be at least 3 characters';
 
-    if (!formData.description.trim()) {
-      errors.description = 'Description is required';
-    } else if (formData.description.trim().length < 10) {
-      errors.description = 'Description must be at least 10 characters';
-    }
+    if (!formData.description.trim()) errors.description = 'Description is required';
+    else if (formData.description.trim().length < 10) errors.description = 'Description must be at least 10 characters';
 
     if (!formData.price) {
       errors.price = 'Price is required';
@@ -128,7 +88,6 @@ const CreateService: React.FC = () => {
       if (durationError) errors.duration = durationError;
     }
 
-    // If there are errors, display them
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       setError('Please fix the errors above');
@@ -136,7 +95,6 @@ const CreateService: React.FC = () => {
     }
 
     setLoading(true);
-
     try {
       await serviceService.createService({
         title: formData.title.trim(),
@@ -147,9 +105,8 @@ const CreateService: React.FC = () => {
         status: formData.status,
         image: selectedImage,
       });
-
       showToast.success('Service created successfully!');
-      setTimeout(() => navigate('/vendor/dashboard'), 500);
+      setTimeout(() => navigate('/vendor/services'), 500);
     } catch (err: any) {
       console.error('Error creating service:', err);
       setError(err.message || 'Failed to create service. Please try again.');
@@ -159,223 +116,245 @@ const CreateService: React.FC = () => {
     }
   };
 
-  // ========================================
-  // RENDER UI
-  // ========================================
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '12px 16px',
+    border: '1.5px solid #E2E8F0',
+    borderRadius: '10px',
+    fontSize: '14px',
+    fontFamily: 'Montserrat, sans-serif',
+    outline: 'none',
+    boxSizing: 'border-box',
+    color: '#0F172A',
+    transition: 'border-color 0.2s',
+    backgroundColor: 'white',
+  };
+
+  const labelStyle: React.CSSProperties = {
+    display: 'block',
+    fontSize: '13px',
+    fontWeight: 700,
+    color: '#0F172A',
+    marginBottom: '8px',
+    fontFamily: 'Montserrat, sans-serif',
+  };
+
+  const errorTextStyle: React.CSSProperties = {
+    fontSize: '11px',
+    color: '#DC2626',
+    marginTop: '4px',
+    fontFamily: 'Montserrat, sans-serif',
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => navigate('/vendor/dashboard')}
-              className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
-            >
-              <ArrowLeft size={20} />
-              <span>Back to Dashboard</span>
-            </button>
-          </div>
-        </div>
-      </div>
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#F8F9FA', fontFamily: 'Montserrat, sans-serif' }}>
+      <VendorSidebar />
 
-      {/* Main Content */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-white rounded-lg shadow-sm border p-8">
-          
-          {/* Form Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Create New Service</h1>
-            <p className="text-gray-600">Fill in the details below to add a new service to your offerings</p>
-          </div>
+      <main style={{ marginLeft: '260px', flex: 1, display: 'flex', flexDirection: 'column' }}>
 
-          {/* Error Message */}
+        {/* Top bar */}
+        <header style={{ position: 'sticky', top: 0, zIndex: 40, backgroundColor: 'white', borderBottom: '1px solid #F1F5F9', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0F172A', fontFamily: 'Syne, sans-serif' }}>
+              Create New Service
+            </h1>
+            <nav style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+              {['Dashboard', 'Services', 'New Service'].map((crumb, i, arr) => (
+                <span key={crumb} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span
+                    onClick={() => {
+                      if (i === 0) navigate('/vendor/dashboard');
+                      else if (i === 1) navigate('/vendor/services');
+                    }}
+                    style={{ fontSize: '11px', fontWeight: i === arr.length - 1 ? 700 : 500, color: i === arr.length - 1 ? '#5B62B3' : '#94A3B8', cursor: i < arr.length - 1 ? 'pointer' : 'default' }}
+                  >
+                    {crumb}
+                  </span>
+                  {i < arr.length - 1 && <span style={{ fontSize: '11px', color: '#CBD5E1' }}>/</span>}
+                </span>
+              ))}
+            </nav>
+          </div>
+        </header>
+
+        {/* Scrollable content */}
+        <div style={{ flex: 1, maxWidth: '860px', width: '100%', margin: '0 auto', padding: '32px 32px 120px', boxSizing: 'border-box' }}>
+
           {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <div className="flex items-start">
-                <svg className="w-5 h-5 text-red-600 mr-2 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                </svg>
-                <span className="text-sm text-red-700">{error}</span>
-              </div>
+            <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '12px', padding: '12px 16px', marginBottom: '24px', color: '#DC2626', fontSize: '13px', fontWeight: 600 }}>
+              {error}
             </div>
           )}
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-6">
-            
-            {/* Image Upload */}
-            <ImageUpload
-              currentImage={null}
-              onImageSelect={setSelectedImage}
-              error={fieldErrors.image}
-            />
+          <form onSubmit={handleSubmit}>
+            <div style={{ backgroundColor: 'white', borderRadius: '20px', boxShadow: '0 1px 8px rgba(0,0,0,0.06)', border: '1px solid #F1F5F9', padding: '40px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
 
-            {/* Title */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Service Title <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <FileText className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+              <div>
+                <h2 style={{ margin: '0 0 6px', fontSize: '22px', fontWeight: 800, color: '#0F172A', fontFamily: 'Syne, sans-serif' }}>Service Details</h2>
+                <p style={{ margin: 0, fontSize: '13px', color: '#94A3B8' }}>Fill in the primary details for your new beauty service.</p>
+              </div>
+
+              {/* Image Upload */}
+              <div>
+                <label style={labelStyle}>Service Image</label>
+                <div
+                  onClick={() => document.getElementById('serviceImageInput')?.click()}
+                  style={{
+                    border: `2px dashed ${imagePreview ? '#5B62B3' : '#E2E8F0'}`,
+                    borderRadius: '14px',
+                    backgroundColor: imagePreview ? '#F5F6FF' : '#FAFAFA',
+                    padding: imagePreview ? '0' : '48px',
+                    display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', transition: 'all 0.2s',
+                    minHeight: '180px', overflow: 'hidden',
+                  }}
+                >
+                  {imagePreview ? (
+                    <img src={imagePreview} alt="Preview" style={{ width: '100%', height: '220px', objectFit: 'cover', borderRadius: '12px', display: 'block' }} />
+                  ) : (
+                    <>
+                      <div style={{ width: '52px', height: '52px', borderRadius: '50%', backgroundColor: '#EEF2FF', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px', fontSize: '22px' }}>⬆</div>
+                      <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: '#64748B' }}>Click to upload service image</p>
+                      <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#CBD5E1' }}>PNG, JPG, WEBP up to 5MB</p>
+                    </>
+                  )}
+                </div>
+                <input id="serviceImageInput" type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageChange} />
+              </div>
+
+              {/* Title */}
+              <div>
+                <label style={labelStyle}>Service Title <span style={{ color: '#E91E63' }}>*</span></label>
                 <input
                   type="text"
                   name="title"
                   value={formData.title}
                   onChange={handleChange}
-                  placeholder="e.g., Professional Haircut"
-                  className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none ${
-                    fieldErrors.title ? 'border-red-500' : 'border-gray-300'
-                  }`}
+                  placeholder="e.g., Signature Bridal Glow Session"
                   maxLength={100}
+                  style={{ ...inputStyle, borderColor: fieldErrors.title ? '#DC2626' : '#E2E8F0' }}
+                  onFocus={e => e.target.style.borderColor = '#5B62B3'}
+                  onBlur={e => { e.target.style.borderColor = fieldErrors.title ? '#DC2626' : '#E2E8F0'; }}
                 />
-              </div>
-              {fieldErrors.title && (
-                <p className="mt-1 text-sm text-red-600">{fieldErrors.title}</p>
-              )}
-              <p className="mt-1 text-xs text-gray-500">{formData.title.length}/100 characters</p>
-            </div>
-
-            {/* Description */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Description <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                name="description"
-                value={formData.description}
-                onChange={handleChange}
-                placeholder="Describe your service in detail..."
-                rows={4}
-                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none resize-none ${
-                  fieldErrors.description ? 'border-red-500' : 'border-gray-300'
-                }`}
-                maxLength={1000}
-              />
-              {fieldErrors.description && (
-                <p className="mt-1 text-sm text-red-600">{fieldErrors.description}</p>
-              )}
-              <p className="mt-1 text-xs text-gray-500">{formData.description.length}/1000 characters</p>
-            </div>
-
-            {/* Price and Duration - 2 Column Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              
-              {/* Price */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Price (NPR) <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <Coins className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                  <input
-                    type="number"
-                    name="price"
-                    value={formData.price}
-                    onChange={handleChange}
-                    onBlur={handleBlur}
-                    placeholder="0.00"
-                    step="0.01"
-                    min="0"
-                    className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none ${
-                      fieldErrors.price ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                  />
-                </div>
-                {fieldErrors.price && (
-                  <p className="mt-1 text-sm text-red-600">{fieldErrors.price}</p>
-                )}
+                {fieldErrors.title && <p style={errorTextStyle}>{fieldErrors.title}</p>}
+                <p style={{ fontSize: '11px', color: '#CBD5E1', marginTop: '4px' }}>{formData.title.length}/100 characters</p>
               </div>
 
-              {/* Duration */}
+              {/* Description */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Duration (minutes) <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                  <input
-                    type="number"
-                    name="duration"
-                    value={formData.duration}
-                    onChange={handleChange}
-                    onBlur={handleBlur}
-                    placeholder="60"
-                    min="1"
-                    step="1"
-                    className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none ${
-                      fieldErrors.duration ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                  />
-                </div>
-                {fieldErrors.duration && (
-                  <p className="mt-1 text-sm text-red-600">{fieldErrors.duration}</p>
-                )}
+                <label style={labelStyle}>Description <span style={{ color: '#E91E63' }}>*</span></label>
+                <textarea
+                  name="description"
+                  value={formData.description}
+                  onChange={handleChange}
+                  placeholder="Describe the service in detail (at least 10 characters)..."
+                  rows={4}
+                  maxLength={1000}
+                  style={{ ...inputStyle, resize: 'none', borderColor: fieldErrors.description ? '#DC2626' : '#E2E8F0' }}
+                  onFocus={e => e.target.style.borderColor = '#5B62B3'}
+                  onBlur={e => { e.target.style.borderColor = fieldErrors.description ? '#DC2626' : '#E2E8F0'; }}
+                />
+                {fieldErrors.description && <p style={errorTextStyle}>{fieldErrors.description}</p>}
+                <p style={{ fontSize: '11px', color: '#CBD5E1', marginTop: '4px' }}>{formData.description.length}/1000 characters</p>
               </div>
-            </div>
 
-            {/* Category and Status - 2 Column Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              
-              {/* Category */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Category <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <Tag className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+              {/* Category + Status */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                <div>
+                  <label style={labelStyle}>Category <span style={{ color: '#E91E63' }}>*</span></label>
                   <select
                     name="category"
                     value={formData.category}
                     onChange={handleChange}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none appearance-none bg-white"
+                    style={{ ...inputStyle }}
+                    onFocus={e => e.target.style.borderColor = '#5B62B3'}
+                    onBlur={e => { e.target.style.borderColor = '#E2E8F0'; }}
                   >
                     {categories.map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
                   </select>
                 </div>
+
+                <div>
+                  <label style={labelStyle}>Publish Status</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', height: '46px', paddingLeft: '4px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: formData.status === 'active' ? '#5B62B3' : '#94A3B8' }}>Active</span>
+                    <div
+                      onClick={() => setFormData({ ...formData, status: formData.status === 'active' ? 'inactive' : 'active' })}
+                      style={{ position: 'relative', width: '44px', height: '24px', borderRadius: '12px', cursor: 'pointer', transition: 'background 0.2s', backgroundColor: formData.status === 'active' ? '#5B62B3' : '#E2E8F0', flexShrink: 0 }}
+                    >
+                      <div style={{ position: 'absolute', top: '3px', left: formData.status === 'active' ? '22px' : '3px', width: '18px', height: '18px', borderRadius: '50%', backgroundColor: 'white', transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.2)' }} />
+                    </div>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: formData.status === 'inactive' ? '#5B62B3' : '#94A3B8' }}>Inactive</span>
+                  </div>
+                </div>
               </div>
 
-              {/* Status */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Status <span className="text-red-500">*</span>
-                </label>
-                <select
-                  name="status"
-                  value={formData.status}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none appearance-none bg-white"
+              {/* Price + Duration */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                <div>
+                  <label style={labelStyle}>Price (Rs.) <span style={{ color: '#E91E63' }}>*</span></label>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', color: '#94A3B8', fontWeight: 600, pointerEvents: 'none' }}>Rs.</span>
+                    <input
+                      type="number"
+                      name="price"
+                      value={formData.price}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      placeholder="0.00"
+                      step="0.01"
+                      min="0"
+                      style={{ ...inputStyle, paddingLeft: '44px', borderColor: fieldErrors.price ? '#DC2626' : '#E2E8F0' }}
+                      onFocus={e => e.target.style.borderColor = '#5B62B3'}
+                    />
+                  </div>
+                  {fieldErrors.price && <p style={errorTextStyle}>{fieldErrors.price}</p>}
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Duration (mins) <span style={{ color: '#E91E63' }}>*</span></label>
+                  <input
+                    type="number"
+                    name="duration"
+                    value={formData.duration}
+                    onChange={handleChange}
+                    onBlur={handleBlur}
+                    placeholder="e.g., 60"
+                    min="1"
+                    step="1"
+                    style={{ ...inputStyle, borderColor: fieldErrors.duration ? '#DC2626' : '#E2E8F0' }}
+                    onFocus={e => e.target.style.borderColor = '#5B62B3'}
+                  />
+                  {fieldErrors.duration && <p style={errorTextStyle}>{fieldErrors.duration}</p>}
+                </div>
+              </div>
+
+              {/* Buttons */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '32px', paddingTop: '24px', borderTop: '1px solid #F1F5F9' }}>
+                <button
+                  type="button"
+                  onClick={() => navigate('/vendor/services')}
+                  disabled={loading}
+                  style={{ padding: '12px 28px', borderRadius: '10px', border: '1px solid #E2E8F0', background: 'transparent', cursor: 'pointer', fontSize: '14px', fontWeight: 600, color: '#64748B', fontFamily: 'Montserrat, sans-serif' }}
                 >
-                  <option value="active">Active (Visible to clients)</option>
-                  <option value="inactive">Inactive (Hidden from clients)</option>
-                </select>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{ padding: '12px 32px', borderRadius: '10px', border: 'none', background: loading ? '#CBD5E1' : 'linear-gradient(135deg, #5B62B3 0%, #747BCF 100%)', color: 'white', cursor: loading ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: 700, fontFamily: 'Montserrat, sans-serif', boxShadow: loading ? 'none' : '0 4px 12px rgba(91,98,179,0.3)' }}
+                >
+                  {loading ? 'Creating...' : 'Create Service'}
+                </button>
               </div>
-            </div>
 
-            {/* Submit Buttons */}
-            <div className="flex gap-4 pt-4">
-              <button
-                type="button"
-                onClick={() => navigate('/vendor/dashboard')}
-                className="flex-1 bg-gray-200 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-300 transition-colors font-medium"
-                disabled={loading}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="flex-1 bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Creating...' : 'Create Service'}
-              </button>
             </div>
           </form>
         </div>
-      </div>
+      </main>
     </div>
   );
 };
