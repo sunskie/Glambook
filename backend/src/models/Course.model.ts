@@ -21,7 +21,7 @@ export interface IBatch {
   seatsTotal: number;
   seatsRemaining: number;
   schedule: string; // e.g., "Mon, Wed, Fri - 10 AM to 12 PM"
-  status: 'upcoming' | 'ongoing' | 'completed' | 'cancelled';
+  status: 'open'|'upcoming' | 'ongoing' | 'completed' | 'cancelled';
 }
 
 // Main Course interface
@@ -95,8 +95,9 @@ const batchSchema = new Schema<IBatch>({
   schedule: { type: String, required: true },
   status: { 
     type: String, 
-    enum: ['upcoming', 'ongoing', 'completed', 'cancelled'],
-    default: 'upcoming' 
+    enum: ['open', 'upcoming', 'ongoing', 'completed', 'cancelled'],
+    default: 'open' 
+
   },
 });
 

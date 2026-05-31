@@ -11,6 +11,7 @@ export interface IUser extends Document {
   isActive: boolean;
   loyaltyPoints: number;
   totalPointsEarned: number;
+  discountUnlocked: boolean;
   resetPasswordToken?: string;
   resetPasswordExpires?: Date;
   createdAt: Date;
@@ -62,6 +63,10 @@ const userSchema = new mongoose.Schema(
     totalPointsEarned: {
       type: Number,
       default: 0
+    },
+    discountUnlocked: {
+      type: Boolean,
+      default: false
     },
     resetPasswordToken: {
       type: String

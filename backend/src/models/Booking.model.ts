@@ -14,6 +14,19 @@ export interface IBooking extends Document {
   clientEmail: string;
   specialRequests?: string;
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
+  totalAmount: number;
+  advanceAmount: number;
+  remainingAmount: number;
+  advancePaid: boolean;
+  remainingPaid: boolean;
+  paymentStatus: 'unpaid' | 'advance_paid' | 'partial' | 'completed' | 'refunded';
+  paymentMethod: 'esewa' | 'cash' | 'other';
+  esewaTransactionId?: string;
+  esewaRefId?: string;
+  termsAccepted: boolean;
+  termsAcceptedAt?: Date;
+  isNonRefundable: boolean;
+  loyaltyDiscountApplied: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -75,6 +88,57 @@ const BookingSchema = new Schema<IBooking>(
       type: String,
       enum: ['pending', 'confirmed', 'cancelled', 'completed'],
       default: 'pending',
+    },
+    totalAmount: {
+      type: Number,
+      required: true,
+    },
+    advanceAmount: {
+      type: Number,
+      required: true,
+    },
+    remainingAmount: {
+      type: Number,
+      required: true,
+    },
+    advancePaid: {
+      type: Boolean,
+      default: false,
+    },
+    remainingPaid: {
+      type: Boolean,
+      default: false,
+    },
+    paymentStatus: {
+      type: String,
+      enum: ['unpaid', 'advance_paid', 'partial', 'completed', 'refunded'],
+      default: 'unpaid',
+    },
+    paymentMethod: {
+      type: String,
+      enum: ['esewa', 'cash', 'other'],
+      default: 'esewa',
+    },
+    esewaTransactionId: {
+      type: String,
+    },
+    esewaRefId: {
+      type: String,
+    },
+    termsAccepted: {
+      type: Boolean,
+      default: false,
+    },
+    termsAcceptedAt: {
+      type: Date,
+    },
+    isNonRefundable: {
+      type: Boolean,
+      default: false,
+    },
+    loyaltyDiscountApplied: {
+      type: Boolean,
+      default: false,
     },
   },
   {

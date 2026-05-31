@@ -64,15 +64,56 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Body parser middleware
-app.use(express.json({ limit: '500mb' }));
-app.use(express.urlencoded({ extended: true, limit: '500mb' }));
+app.use(express.json({ limit: '50mb' })); 
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+//Extend timeout for large file uploads (2hr video = needs ~10min upload time)
+app.use((req, res, next) => {
+  if (req.path.includes('/courses') && req.method === 'POST') {
+    req.setTimeout(30 * 60 * 1000); // 30 minutes for course creation
+    res.setTimeout(30 * 60 * 1000);
+  }
+  next();
+});
 
 // Data sanitization
 app.use(sanitizeData);
 app.use(validateInput);
 
 // Serve static files
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use('/uploads', (req, res, next) => {
+  // Allow range requests — required for HTML5 video seeking
+  res.setHeader('Accept-Ranges', 'bytes');
+  next();
+}, express.static(path.join(__dirname, '../uploads'), {
+  acceptRanges: true,          // enables byte-range serving (video seek/scrub)
+  setHeaders: (res, filePath) => {
+    const ext = filePath.split('.').pop()?.toLowerCase() || '';
+ 
+    // Video MIME types
+    const videoMimes: Record<string, string> = {
+      mp4:  'video/mp4',
+      webm: 'video/webm',
+      mov:  'video/quicktime',
+      m4v:  'video/mp4',
+      avi:  'video/x-msvideo',
+      mkv:  'video/x-matroska',
+    };
+ 
+    if (videoMimes[ext]) {
+      res.setHeader('Content-Type', videoMimes[ext]);
+      // Allow browser to cache video chunks but revalidate
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+    }
+ 
+    if (ext === 'pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      // inline = browser opens it; attachment = forces download
+      res.setHeader('Content-Disposition', 'inline');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+    }
+  },
+}));
 
 // Rate limiting
 app.use('/api/', apiLimiter);
@@ -98,7 +139,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/quiz', quizRoutes);
-app.use('/api/payment', paymentRoutes);
+app.use('/api/payments', paymentRoutes);
 app.use('/api/otp', otpRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/availability', availabilityRoutes);
@@ -121,6 +162,9 @@ app.get('/', (req, res) => {
   });
 });
 
+// Multer Error Handler (must be before 404)
+app.use(handleMulterError);
+
 // 404 Error Handler
 app.use((req, res) => {
   console.warn(`404 - Route not found: ${req.method} ${req.originalUrl}`);
@@ -129,9 +173,6 @@ app.use((req, res) => {
     message: `Route ${req.method} ${req.originalUrl} not found`,
   });
 });
-
-// Multer Error Handler
-app.use(handleMulterError);
 
 // Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

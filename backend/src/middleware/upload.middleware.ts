@@ -170,8 +170,9 @@ export const uploadCourseFiles = multer({
   storage: courseStorage,
   fileFilter: courseFileFilter,
   limits: {
-    fileSize: 500 * 1024 * 1024, // 500MB per file
-    files: 20, // up to 20 files (lessons + thumbnail + PDFs)
+    fileSize: 4 * 1024 * 1024 * 1024, // 4GB per file — supports 2hr HD videos
+    files: 20,
+    fieldSize: 10 * 1024 * 1024, // 10MB for text fields
   },
 }).fields([
   { name: 'thumbnail', maxCount: 1 },
@@ -208,12 +209,24 @@ export const handleMulterError = (
   next: NextFunction
 ) => {
   if (error instanceof multer.MulterError) {
-    console.error('Multer error:', error);
+    console.error('Multer error:', error.code, error.message);
 
     if (error.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({
         success: false,
-        message: 'File is too large. Maximum size is 500MB for videos, 10MB for PDFs.',
+        message: 'File is too large. Videos must be under 4GB (supports up to ~2 hours).',
+      });
+    }
+    if (error.code === 'LIMIT_FILE_COUNT') {
+      return res.status(400).json({
+        success: false,
+        message: 'Too many files uploaded at once.',
+      });
+    }
+    if (error.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({
+        success: false,
+        message: `Unexpected file field: "${error.field}". Check your form field names.`,
       });
     }
 
@@ -222,7 +235,7 @@ export const handleMulterError = (
       message: `Upload error: ${error.message}`,
     });
   } else if (error) {
-    console.error('File upload error:', error);
+    console.error('File upload error:', error.message);
     return res.status(400).json({
       success: false,
       message: error.message || 'File upload failed',
