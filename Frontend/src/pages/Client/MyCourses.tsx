@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../utils/api';
 import ClientSidebar from '../../components/Client/ClientSidebar';
+import Breadcrumbs from '../../components/common/Breadcrumbs';
 
 const MyCourses = () => {
   const navigate = useNavigate();
@@ -27,15 +28,40 @@ const MyCourses = () => {
 
   const getProgress = (e: any) => e.progress ?? e.completionPercentage ?? 0;
 
+  const getCertificateStatus = (enrollment: any) => {
+    const progress = getProgress(enrollment);
+    const quizPassed = enrollment.quizPassed === true;
+    const attendanceEligible = (enrollment.attendancePercentage || 0) >= 80;
+    const practicalApproved = enrollment.practicalPassed === true;
+    const onlineCertEligible = progress === 100 && quizPassed;
+    const finalCertEligible = progress === 100 && quizPassed && attendanceEligible && practicalApproved;
+
+    if (finalCertEligible) {
+      return { label: '🏆 Final Certificate Ready', color: '#FFD700', type: 'final' };
+    } else if (onlineCertEligible) {
+      return { label: '🎓 Online Certificate Ready', color: '#10B981', type: 'online' };
+    } else if (progress === 100 && !quizPassed) {
+      return { label: '📝 Take Quiz', color: '#F59E0B', type: 'quiz' };
+    } else {
+      return { label: '⏳ In Progress', color: '#9CA3AF', type: 'progress' };
+    }
+  };
+
   const stats = {
     total: enrollments.filter(e => e.status !== 'dropped').length,
     inProgress: enrollments.filter(e => getProgress(e) < 100 && e.status !== 'dropped').length,
     completed: enrollments.filter(e => getProgress(e) >= 100).length,
-    certificates: enrollments.filter(e => getProgress(e) >= 100 && (e.courseId?.certificate || e.course?.certificate)).length,
+    certificates: enrollments.filter(e =>
+      e.certificateIssued === true ||
+      e.onlineCertificateIssuedAt != null ||
+      e.finalCertificateIssuedAt != null ||
+      (e.quizPassed === true && getProgress(e) === 100)
+    ).length,
   };
 
   const filtered = enrollments.filter(e => {
     if (e.status === 'dropped') return false;
+    if (!e.courseId && !e.course) return false;
     if (activeTab === 'inprogress') return getProgress(e) < 100;
     if (activeTab === 'completed') return getProgress(e) >= 100;
     return true;
@@ -49,6 +75,12 @@ const MyCourses = () => {
       <ClientSidebar />
 
       <div style={{ marginLeft: `${SIDEBAR_WIDTH}px`, flex: 1, padding: '40px', overflowY: 'auto' as const, minHeight: '100vh' }}>
+
+        {/* Breadcrumbs */}
+        <Breadcrumbs items={[
+          { label: 'Home', path: '/client/dashboard' },
+          { label: 'My Courses' },
+        ]} />
 
         {/* Header */}
         <h1 style={{ margin: '0 0 4px', fontSize: '32px', fontWeight: 800, color: '#111', fontFamily: 'Syne, sans-serif' }}>
@@ -209,18 +241,42 @@ const MyCourses = () => {
                         by {course.vendorId?.name || 'Instructor'}
                       </p>
 
-                      {/* Progress bar */}
-                      <div style={{ marginBottom: '10px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                          <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>🖥 Theory Progress</span>
-                          <span style={{ fontSize: '13px', fontWeight: 800, color: '#E91E63' }}>{progress}%</span>
+                      {/* Progress Breakdown */}
+                      <div style={{ marginBottom: '16px' }}>
+                        {/* Theory */}
+                        <div style={{ marginBottom: '12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>🖥 Theory</span>
+                            <span style={{ fontSize: '12px', fontWeight: 700, color: enrollment.onlineCompleted ? '#10B981' : '#E91E63' }}>
+                              {enrollment.onlineCompleted ? '✓ Complete' : `${progress}%`}
+                            </span>
+                          </div>
+                          <div style={{ height: '6px', backgroundColor: '#F3F4F6', borderRadius: '3px', overflow: 'hidden' }}>
+                            <div style={{
+                              height: '100%', width: `${enrollment.onlineCompleted ? 100 : progress}%`,
+                              backgroundColor: enrollment.onlineCompleted ? '#10B981' : '#5B62B3',
+                              transition: 'width 0.4s',
+                            }} />
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#9CA3AF', marginTop: '3px' }}>
+                            {course.lessons?.length || 0} lessons
+                          </div>
                         </div>
-                        <div style={{ height: '8px', backgroundColor: '#F3F4F6', borderRadius: '4px', overflow: 'hidden' }}>
-                          <div style={{
-                            height: '100%', width: `${progress}%`,
-                            backgroundColor: isCompleted ? '#10B981' : '#5B62B3',
-                            borderRadius: '4px', transition: 'width 0.4s',
-                          }} />
+
+                        {/* Quiz Status */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>📝 Quiz</span>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: enrollment.quizPassed ? '#10B981' : '#F59E0B' }}>
+                            {enrollment.quizPassed ? '✓ Passed' : '○ Pending'}
+                          </span>
+                        </div>
+
+                        {/* Certificate Status */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>🎓 Certificate</span>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: getCertificateStatus(enrollment).color }}>
+                            {getCertificateStatus(enrollment).label}
+                          </span>
                         </div>
                       </div>
 
@@ -255,20 +311,39 @@ const MyCourses = () => {
                           : 'Not yet'}
                       </span>
                       <div style={{ display: 'flex', gap: '10px' }}>
-                        {isCompleted && course.certificate && (
-                          <button
-                            onClick={() => navigate(`/client/courses/${course._id}/certificate`)}
-                            style={{
-                              padding: '10px 18px', backgroundColor: '#10B981', color: 'white',
-                              border: 'none', borderRadius: '10px', fontWeight: 700,
-                              fontSize: '13px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif',
-                            }}
-                          >
-                            View Certificate 🎓
-                          </button>
-                        )}
+                        {(() => {
+                          const certStatus = getCertificateStatus(enrollment);
+                          if (certStatus.type === 'final') {
+                            return (
+                              <button
+                                onClick={() => navigate(`/client/courses/${course._id}/certificate`)}
+                                style={{
+                                  padding: '10px 18px', backgroundColor: '#FFD700', color: '#000',
+                                  border: 'none', borderRadius: '10px', fontWeight: 700,
+                                  fontSize: '13px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif',
+                                }}
+                              >
+                                View Final Certificate 🏆
+                              </button>
+                            );
+                          } else if (certStatus.type === 'online') {
+                            return (
+                              <button
+                                onClick={() => navigate(`/client/courses/${course._id}/online-certificate`)}
+                                style={{
+                                  padding: '10px 18px', backgroundColor: '#10B981', color: 'white',
+                                  border: 'none', borderRadius: '10px', fontWeight: 700,
+                                  fontSize: '13px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif',
+                                }}
+                              >
+                                View Online Certificate 🎓
+                              </button>
+                            );
+                          }
+                          return null;
+                        })()}
                         <button
-                          onClick={() => navigate(`/client/courses/${course._id}/learn`)}
+                          onClick={() => navigate(`/client/courses/${course._id}/learn`, { state: { from: '/client/my-courses' } })}
                           style={{
                             padding: '10px 22px', backgroundColor: '#E91E63', color: 'white',
                             border: 'none', borderRadius: '10px', fontWeight: 700,

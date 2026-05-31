@@ -1,9 +1,9 @@
 // Frontend/src/pages/Vendor/VendorCourseDashboard.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  BookOpen, Plus, Users, TrendingUp, DollarSign, 
-  Edit, Trash2, Eye, Clock, Award, CheckCircle 
+import {
+  BookOpen, Plus, Users, TrendingUp, DollarSign,
+  Edit, Trash2, Eye, Clock, Award, CheckCircle, Calendar
 } from 'lucide-react';
 import courseService from '../../services/api/courseService';
 import enrollmentService from '../../services/api/enrollmentService';
@@ -538,11 +538,11 @@ const VendorCourseDashboard: React.FC = () => {
                       gap: '8px'
                     }}>
                       <button
-                        onClick={() => navigate(`/vendor/courses/${course._id}/students`)}
+                        onClick={() => navigate(`/vendor/courses/${course._id}/attendance`)}
                         style={{
                           padding: '8px',
-                          backgroundColor: '#E3F2FD',
-                          color: '#2196F3',
+                          backgroundColor: '#F3E5F5',
+                          color: '#7B1FA2',
                           border: 'none',
                           borderRadius: '6px',
                           fontSize: '12px',
@@ -554,10 +554,10 @@ const VendorCourseDashboard: React.FC = () => {
                           gap: '4px',
                           fontFamily: 'Montserrat, sans-serif'
                         }}
-                        title="View Students"
+                        title="Manage Attendance"
                       >
-                        <Users size={14} />
-                        Students
+                        <Calendar size={14} />
+                        Attendance
                       </button>
 
                       <button

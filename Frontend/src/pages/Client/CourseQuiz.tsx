@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../utils/api';
+import Breadcrumbs from '../../components/common/Breadcrumbs';
 
 const CourseQuiz = () => {
   const { courseId } = useParams();
@@ -17,6 +18,19 @@ const CourseQuiz = () => {
     api.get(`/courses/${courseId}`)
       .then((res: any) => setCourse(res?.data?.course || res?.data || null))
       .catch(() => {});
+    api.get(`/quiz/course/${courseId}`)
+      .then((res: any) => {
+        const quizData = res?.data?.data || res?.data;
+        console.log('🎯 Quiz Fetch Response:', res);
+        console.log('🎯 Quiz Data:', quizData);
+        if (quizData?.questions?.length > 0) {
+          console.log('🎯 Quiz Questions Loaded:', quizData.questions.length, 'questions');
+          setCourse((prev: any) => ({ ...prev, quiz: { questions: quizData.questions } }));
+        }
+      })
+      .catch((err) => {
+        console.error('🎯 Quiz Fetch Error:', err);
+      });
     api.get('/enrollments/my')
       .then((res: any) => {
         const all = res?.data?.enrollments || res?.enrollments || [];
@@ -32,13 +46,24 @@ const CourseQuiz = () => {
     if (!enrollment) return;
     setSubmitting(true);
     try {
-      const res: any = await api.post('/enrollments/quiz/submit', {
+      const payload = {
         enrollmentId: enrollment._id,
+        courseId,
         answers,
-      });
+      };
+      console.log('🎯 Submitting Quiz Payload:', payload);
+      const res: any = await api.post('/enrollments/quiz/submit', payload);
+      console.log('🎯 Quiz Submit Response:', res);
       setResult(res?.data || res);
       setSubmitted(true);
+
+      // Update local enrollment state to reflect pending approval
+      setEnrollment((prev: any) => ({
+        ...prev,
+        quizStatus: 'pending_approval',
+      }));
     } catch (err: any) {
+      console.error('🎯 Quiz Submit Error:', err?.response?.data || err);
       alert(err?.response?.data?.message || 'Failed to submit quiz');
     } finally { setSubmitting(false); }
   };
@@ -64,18 +89,20 @@ const CourseQuiz = () => {
       <div style={{ backgroundColor: 'white', borderRadius: '24px', padding: '48px', maxWidth: '500px', width: '100%', textAlign: 'center' as const, boxShadow: '0 8px 32px rgba(0,0,0,0.1)' }}>
         <span style={{ fontSize: '64px' }}>{result.passed ? '🎉' : '😔'}</span>
         <h2 style={{ margin: '16px 0 8px', fontFamily: 'Syne, sans-serif', fontSize: '28px' }}>
-          {result.passed ? 'Congratulations!' : 'Not quite there yet'}
+          {result.passed ? 'Quiz Submitted!' : 'Not quite there yet'}
         </h2>
         <p style={{ color: '#6B7280', fontSize: '16px', margin: '0 0 24px' }}>
           You scored <strong style={{ color: result.passed ? '#10B981' : '#E91E63', fontSize: '24px' }}>{result.score}%</strong>
         </p>
         <p style={{ color: '#374151', fontSize: '14px', margin: '0 0 32px' }}>
-          {result.passed ? 'You passed! Your certificate has been generated.' : 'You need 70% to pass. Review the lessons and try again.'}
+          {result.passed
+            ? 'Your quiz has been submitted and is pending instructor approval. You will receive your certificate once approved.'
+            : 'You need 70% to pass. Review the lessons and try again.'}
         </p>
         {result.passed ? (
-          <button onClick={() => navigate(`/client/courses/${courseId}/certificate`)}
-            style={{ width: '100%', padding: '14px', backgroundColor: '#10B981', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 800, fontSize: '15px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}>
-            View My Certificate 🎓
+          <button onClick={() => navigate(`/client/courses/${courseId}/learn`)}
+            style={{ width: '100%', padding: '14px', backgroundColor: '#5B62B3', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 800, fontSize: '15px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}>
+            Back to Course
           </button>
         ) : (
           <button onClick={() => navigate(`/client/courses/${courseId}/learn`)}
@@ -89,6 +116,13 @@ const CourseQuiz = () => {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#F8F9FC', fontFamily: 'Montserrat, sans-serif', padding: '40px' }}>
+        <Breadcrumbs items={[
+          { label: 'Home', path: '/client/dashboard' },
+          { label: 'My Courses', path: '/client/my-courses' },
+          { label: course?.title || 'Course', path: `/client/courses/${courseId}/learn` },
+          { label: 'Final Quiz' },
+        ]} />
+
       <div style={{ maxWidth: '720px', margin: '0 auto' }}>
         <button onClick={() => navigate(`/client/courses/${courseId}/learn`)}
           style={{ background: 'none', border: 'none', color: '#6B7280', cursor: 'pointer', fontSize: '13px', fontWeight: 600, marginBottom: '24px', fontFamily: 'Montserrat, sans-serif' }}>

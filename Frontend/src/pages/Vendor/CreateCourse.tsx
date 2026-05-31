@@ -24,6 +24,7 @@ interface Batch {
   endDate: string;
   location: string;
   seatsTotal: number;
+  seatsRemaining: number;
   schedule: string;
 }
 
@@ -70,6 +71,7 @@ const CreateCourse: React.FC = () => {
     endDate: '',
     location: '',
     seatsTotal: 0,
+    seatsRemaining: 0,
     schedule: '',
   });
 
@@ -129,8 +131,11 @@ const CreateCourse: React.FC = () => {
       alert('Please fill in batch details');
       return;
     }
-    setBatches(prev => [...prev, { ...currentBatch }]);
-    setCurrentBatch({ startDate: '', endDate: '', location: '', seatsTotal: 0, schedule: '' });
+setBatches(prev => [...prev, { 
+  ...currentBatch, 
+  seatsRemaining: currentBatch.seatsTotal 
+}]);
+setCurrentBatch({ startDate: '', endDate: '', location: '', seatsTotal: 0, seatsRemaining: 0, schedule: '' });
   };
 
   const removeBatch = (index: number) => {
@@ -392,9 +397,9 @@ const CreateCourse: React.FC = () => {
 
   const renderStep3 = () => (
     <div>
-      <h2 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '24px', fontFamily: 'Syne, sans-serif' }}>Course Content (Optional)</h2>
+      <h2 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '24px', fontFamily: 'Syne, sans-serif' }}>Course Content </h2>
       <p style={{ fontSize: '14px', color: '#666', marginBottom: '24px', fontFamily: 'Montserrat, sans-serif' }}>
-        Add lessons and batches now, or add them later after the course is created.
+        Add lessons and batches for your course. You can specify the content type for each lesson (video, PDF, or article) and upload the relevant files or links. Batches allow you to schedule physical classes with specific dates and locations.
       </p>
 
       <div style={{ marginBottom: '32px' }}>
@@ -490,14 +495,6 @@ const CreateCourse: React.FC = () => {
                 </div>
               </div>
             )}
-          </div>
-
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', fontFamily: 'Montserrat, sans-serif' }}>
-              <input type="checkbox" checked={currentLesson.isPreview} onChange={(e) => setCurrentLesson({ ...currentLesson, isPreview: e.target.checked })}
-                style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
-              Allow as Preview Lesson
-            </label>
           </div>
 
           <button onClick={addLesson}

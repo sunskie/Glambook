@@ -8,10 +8,10 @@ import {
 import courseService from '../../services/api/courseService';
 import enrollmentService from '../../services/api/enrollmentService';
 import ReviewsList from '../../components/common/ReviewsList';
-import ReviewForm from '../../components/common/ReviewForm';
 import { useAuth } from '../../context/AuthContext';
 import showToast from '../../components/common/Toast';
 import api from '../../utils/api';
+import Breadcrumbs from '../../components/common/Breadcrumbs';
 
 /* ─── types ─────────────────────────────────────────────────── */
 interface Lesson {
@@ -105,7 +105,6 @@ const CourseDetail: React.FC = () => {
   const [loading, setLoading]         = useState(true);
   const [activeTab, setActiveTab]     = useState<'overview' | 'curriculum' | 'instructor' | 'reviews'>('overview');
   const [expanded, setExpanded]       = useState<number[]>([0]);
-  const [showReviewForm, setShowForm] = useState(false);
   const [refreshKey, setRefreshKey]   = useState(0);
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
   const [enrolling, setEnrolling]     = useState(false);
@@ -120,12 +119,26 @@ const CourseDetail: React.FC = () => {
     if (!course?._id) return;
     api.get('/enrollments/my')
       .then((res: any) => {
-        const enrollments = res?.data?.enrollments || res?.enrollments || [];
-        const activeEnrollments = enrollments.filter((e: any) => e.status !== 'dropped');
-        setEnrollmentCount(activeEnrollments.length);
-        setIsEnrolled(activeEnrollments.some((e: any) =>
-          (e.courseId?._id || e.courseId) === course._id
-        ));
+        const enrollments = res?.data?.enrollments || 
+                            res?.enrollments || [];
+        const activeEnrollments = enrollments.filter((e: any) =>
+          e.status === 'enrolled' || 
+          e.status === 'active' ||
+          e.status === 'completed'
+        );
+        setEnrollmentCount(
+          activeEnrollments.filter((e: any) => 
+            e.status !== 'completed'
+          ).length
+        );
+        setIsEnrolled(
+          enrollments.some((e: any) =>
+            (e.courseId?._id || e.courseId) === course._id &&
+            (e.status === 'enrolled' || 
+             e.status === 'active' || 
+             e.status === 'completed')
+          )
+        );
       })
       .catch(() => {});
   }, [course?._id]);
@@ -150,8 +163,6 @@ const CourseDetail: React.FC = () => {
 
   const toggleModule = (i: number) =>
     setExpanded(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i]);
-
-  const handleReviewSuccess = () => { setShowForm(false); setRefreshKey(k => k + 1); };
 
   const handleEnrollClick = async () => {
     if (!course) return;
@@ -204,36 +215,67 @@ const CourseDetail: React.FC = () => {
     if (!course || !user) return;
     setEnrolling(true);
     try {
-      const res: any = await api.post('/payments/course/initiate', {
-        amount: course.price,
-        courseId: course._id,
-        courseName: course.title,
-      });
-
-      const paymentData = res.data || res;
-
-      sessionStorage.setItem('pendingCourseEnrollment', JSON.stringify({
+      // Step 1: Create enrollment first (status: pending payment)
+      const enrollRes: any = await api.post('/enrollments', {
         courseId: course._id,
         selectedBatchId: selectedBatch?._id,
-        amount: course.price,
+        clientName: user.name,
+        clientPhone: user.phone?.trim() || '',
+        clientEmail: user.email,
+        paymentMethod: 'esewa',
+      });
+
+      const enrollment = enrollRes?.data?.data || enrollRes?.data || enrollRes;
+      const enrollmentId = enrollment?._id;
+
+      if (!enrollmentId) {
+        showToast.error('Failed to create enrollment. Please try again.');
+        setEnrolling(false);
+        return;
+      }
+
+      // Step 2: Initiate payment with enrollmentId
+      const totalAmount = course.discountPrice || course.price;
+      const payRes: any = await api.post('/payments/course/initiate', {
+        enrollmentId,
+        totalAmount,
+        termsAccepted: true,
+      });
+
+      const paymentData = payRes?.data || payRes;
+      const esewaPayload = paymentData?.esewaPayload;
+
+      if (!esewaPayload?.transaction_uuid) {
+        showToast.error('Payment setup failed. Please try again.');
+        setEnrolling(false);
+        return;
+      }
+
+      // Step 3: Store enrollment context for success/failure page
+      sessionStorage.setItem('pendingCourseEnrollment', JSON.stringify({
+        courseId: course._id,
+        enrollmentId,
+        selectedBatchId: selectedBatch?._id,
+        amount: totalAmount,
       }));
 
+      // Step 4: Submit eSewa form
       const form = document.createElement('form');
       form.method = 'POST';
       form.action = 'https://rc-epay.esewa.com.np/api/epay/main/v2/form';
 
-      const fields: any = {
-        amount: paymentData.amount,
+      const fields: Record<string, string | number> = {
+        amount: esewaPayload.amount,
         tax_amount: 0,
-        total_amount: paymentData.amount,
-        transaction_uuid: paymentData.transaction_uuid,
-        product_code: paymentData.product_code,
+        total_amount: esewaPayload.total_amount,
+        transaction_uuid: esewaPayload.transaction_uuid,
+        product_code: esewaPayload.product_code,
         product_service_charge: 0,
         product_delivery_charge: 0,
-        success_url: paymentData.success_url,
-        failure_url: paymentData.failure_url,
+        success_url: esewaPayload.success_url,
+        failure_url: esewaPayload.failure_url,
         signed_field_names: 'total_amount,transaction_uuid,product_code',
-        signature: paymentData.signature,
+        signature: esewaPayload.signature,
       };
 
       Object.entries(fields).forEach(([key, value]) => {
@@ -247,7 +289,8 @@ const CourseDetail: React.FC = () => {
       document.body.appendChild(form);
       form.submit();
     } catch (err: any) {
-      showToast.error('Failed to initiate payment');
+      const msg = err?.response?.data?.message || 'Failed to initiate payment';
+      showToast.error(msg);
       setEnrolling(false);
     }
   };
@@ -267,7 +310,7 @@ const CourseDetail: React.FC = () => {
       });
       showToast.success('Enrolled successfully!');
       setShowPaymentModal(false);
-      navigate(`/client/learn/${course._id}`);
+      navigate(`/client/courses/${course._id}/learn`);
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Failed to enroll';
       const requiresPhone = err?.response?.data?.requiresPhone;
@@ -304,6 +347,13 @@ const CourseDetail: React.FC = () => {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#FAFAFA', fontFamily: 'Montserrat, sans-serif' }}>
+      {/* Breadcrumbs */}
+      <Breadcrumbs items={[
+        { label: 'Home', path: '/client/dashboard' },
+        { label: 'My Courses', path: '/client/my-courses' },
+        { label: course?.title || 'Course Detail' },
+      ]} />
+
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&display=swap');
         @keyframes fadeUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
@@ -426,7 +476,7 @@ const CourseDetail: React.FC = () => {
 
               {/* Enroll button — check enrollment limit */}
               {isEnrolled ? (
-                <button onClick={() => navigate(`/client/learning/${course._id}`)}
+                <button onClick={() => navigate(`/client/courses/${course._id}/learn`, { state: { from: `/client/courses/${course._id}` } })}
                   style={{ width: '100%', padding: '14px', backgroundColor: '#10B981', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 800, fontSize: '15px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif', marginBottom: '12px' }}>
                   Continue Learning →
                 </button>
@@ -543,7 +593,7 @@ const CourseDetail: React.FC = () => {
             {activeTab === 'curriculum' && (
               <div>
                 <h2 style={{ margin: '0 0 24px', fontSize: '24px', fontWeight: 800, color: '#111', fontFamily: 'Syne, sans-serif' }}>Course Curriculum</h2>
-                {(course.modules || [{ title: 'Course Content', lessons: course.lessons || [] }]).map((module: any, mIdx: number) => (
+                {groupByModule(course.lessons || []).map((module, mIdx) => (
                   <div key={mIdx} style={{ marginBottom: '12px' }}>
                     {/* Module header */}
                     <div
@@ -628,41 +678,49 @@ const CourseDetail: React.FC = () => {
             {/* ── REVIEWS ──────────────────────────────────── */}
             {activeTab === 'reviews' && (
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px', flexWrap: 'wrap', gap: '16px' }}>
-                  <h2 style={{ margin: 0, fontSize: '28px', fontWeight: 800, letterSpacing: '-0.02em', color: '#1A1C30' }}>
-                    Student Reviews
-                  </h2>
-                  <button onClick={() => setShowForm(true)}
-                    style={{ padding: '11px 22px', borderRadius: '12px', border: 'none', backgroundColor: '#5B62B3', color: 'white', fontSize: '13px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Montserrat, sans-serif', boxShadow: '0 4px 14px rgba(91,98,179,0.25)' }}>
-                    Write a Review
-                  </button>
-                </div>
-
+                <h2 style={{ margin: '0 0 28px', fontSize: '28px', fontWeight: 800, letterSpacing: '-0.02em', color: '#1A1C30' }}>
+                  Student Reviews
+                </h2>
+                
                 {/* Rating summary */}
+                {(() => {
+                  const totalReviews = course.reviewCount || 0;
+                  // ratingDistribution may not exist yet; fall back to zeros
+                const dist: Record<number, number> = (course as any).ratingDistribution || {};
+                return (
                 <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '24px', border: '1.5px solid #EDF0F7', marginBottom: '28px', display: 'flex', gap: '28px', alignItems: 'center' }}>
-                  <div style={{ textAlign: 'center', flexShrink: 0 }}>
-                    <p style={{ margin: '0 0 6px', fontSize: '52px', fontWeight: 800, color: '#1A1C30', letterSpacing: '-0.04em' }}>{course.rating.toFixed(1)}</p>
-                    <Stars n={Math.round(course.rating)} />
-                    <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#64748B' }}>Course rating</p>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    {[5,4,3,2,1].map(star => (
-                      <div key={star} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-                        <span style={{ fontSize: '12px', color: '#64748B', width: '8px', textAlign: 'right' }}>{star}</span>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="#F59E0B" stroke="#F59E0B" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                        <div style={{ flex: 1, height: '6px', backgroundColor: '#F1F5F9', borderRadius: '999px', overflow: 'hidden' }}>
-                          <div style={{ height: '100%', backgroundColor: '#F59E0B', borderRadius: '999px', width: star === Math.round(course.rating) ? '60%' : `${Math.max(5, 60 - (Math.abs(star - course.rating) * 18))}%` }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                <div style={{ textAlign: 'center' as const, flexShrink: 0 }}>
+                  <p style={{ margin: '0 0 6px', fontSize: '64px', fontWeight: 800, color: '#1A1C30', letterSpacing: '-0.04em', lineHeight: 1 }}>
+          {totalReviews > 0 ? course.rating.toFixed(1) : '0'}
+        </p>
+        <Stars n={totalReviews > 0 ? Math.round(course.rating) : 5} />
+        <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#64748B' }}>{totalReviews} reviews</p>
+      </div>
+      <div style={{ flex: 1 }}>
+        {[5, 4, 3, 2, 1].map(star => {
+          const count = dist[star] || 0;
+          const pct = totalReviews > 0 ? Math.round((count / totalReviews) * 100) : 0;
+          return (
+            <div key={star} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+              <span style={{ fontSize: '12px', color: '#64748B', width: '40px', flexShrink: 0 }}>{star} stars</span>
+              <div style={{ flex: 1, height: '8px', backgroundColor: '#E8EAF6', borderRadius: '999px', overflow: 'hidden' }}>
+                <div style={{ height: '100%', backgroundColor: '#5B62B3', borderRadius: '999px', width: `${pct}%`, transition: 'width 0.4s ease' }} />
+              </div>
+              <span style={{ fontSize: '12px', color: '#64748B', width: '32px', textAlign: 'right' as const, flexShrink: 0 }}>{pct}%</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+})()}
+
+              
 
                 <ReviewsList
                   key={refreshKey}
                   targetType="course"
                   targetId={course._id}
-                  onWriteReview={() => setShowForm(true)}
                 />
               </div>
             )}
@@ -764,16 +822,6 @@ const CourseDetail: React.FC = () => {
         </div>
       </div>
 
-      {/* ═══ REVIEW FORM MODAL ══════════════════════════════════ */}
-      {showReviewForm && (
-        <ReviewForm
-          targetType="course"
-          targetId={course._id}
-          onSuccess={handleReviewSuccess}
-          onCancel={() => setShowForm(false)}
-        />
-      )}
-
       {/* ═══ PAYMENT MODAL ═════════════════════════════════════ */}
       {showPaymentModal && (
         <div style={{
@@ -793,10 +841,24 @@ const CourseDetail: React.FC = () => {
               <button onClick={() => setShowPaymentModal(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#9CA3AF' }}>×</button>
             </div>
 
-            {/* Course summary */}
-            <div style={{ backgroundColor: '#F8F9FC', borderRadius: '12px', padding: '16px', marginBottom: '24px' }}>
-              <p style={{ margin: '0 0 4px', fontWeight: 700, fontSize: '14px', color: '#111' }}>{course.title}</p>
-              <p style={{ margin: 0, fontSize: '22px', fontWeight: 800, color: '#E91E63' }}>Rs. {course.price?.toLocaleString()}</p>
+            {/* Payment breakdown */}
+            <div style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '24px', marginBottom: '24px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#ffffff', marginBottom: '16px', marginTop: '0px' }}>Payment Details</h3>
+              
+              <div style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#9ca3af', fontSize: '14px' }}>Total Amount</span>
+                <span style={{ color: '#ffffff', fontSize: '14px', fontWeight: '600' }}>Rs. {(course.discountPrice || course.price).toLocaleString()}</span>
+              </div>
+
+              <div style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between', padding: '12px', background: 'rgba(34, 197, 94, 0.1)', borderRadius: '8px', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
+                <span style={{ color: '#86efac', fontSize: '14px', fontWeight: '600' }}>Advance Payment (15%)</span>
+                <span style={{ color: '#22c55e', fontSize: '14px', fontWeight: '700' }}>Rs. {Math.round((course.discountPrice || course.price) * 0.15).toLocaleString()}</span>
+              </div>
+
+              <div style={{ marginBottom: '0px', display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#9ca3af', fontSize: '14px' }}>Remaining (Pay after class)</span>
+                <span style={{ color: '#fbbf24', fontSize: '14px', fontWeight: '600' }}>Rs. {((course.discountPrice || course.price) - Math.round((course.discountPrice || course.price) * 0.15)).toLocaleString()}</span>
+              </div>
             </div>
 
             <p style={{ fontSize: '13px', fontWeight: 700, color: '#374151', marginBottom: '12px' }}>
