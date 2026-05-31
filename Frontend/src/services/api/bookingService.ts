@@ -8,6 +8,7 @@ export interface CreateBookingData {
   clientPhone: string;
   clientEmail: string;
   specialRequests?: string;
+  applyLoyaltyDiscount?: boolean;
 }
 
 // POST /bookings

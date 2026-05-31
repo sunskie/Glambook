@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, ArrowRight, Plus, BookOpen, Sparkles, Star } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Calendar, Clock, ArrowRight, Plus, BookOpen, Sparkles, Star, Upload, X, ImageIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getClientBookings, cancelBooking } from '../../services/api/bookingService';
 import reviewService from '../../services/api/reviewService';
@@ -25,7 +25,7 @@ interface Booking {
   clientPhone: string;
   clientEmail: string;
   specialRequests?: string;
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
+  status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'disputed'; // ✅ added 'disputed'
   createdAt: string;
   vendorId: string | { _id: string };
 }
@@ -35,7 +35,10 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }>
   confirmed: { bg: '#DCFCE7', color: '#166534', label: 'Confirmed' },
   cancelled: { bg: '#FEE2E2', color: '#991B1B', label: 'Cancelled' },
   completed: { bg: '#EEF2FF', color: '#3730A3', label: 'Completed' },
+  disputed:  { bg: '#FEF3C7', color: '#92400E', label: 'Disputed' }, // ✅ added
 };
+
+const MAX_EVIDENCE = 3;
 
 const ClientBookings: React.FC = () => {
   const navigate = useNavigate();
@@ -49,25 +52,28 @@ const ClientBookings: React.FC = () => {
   const [cancelLoading, setCancelLoading] = useState(false);
 
   const [reviewModal, setReviewModal] = useState<{
-    open: boolean;
-    bookingId: string;
-    serviceId: string;
-    serviceName: string;
+    open: boolean; bookingId: string; serviceId: string; serviceName: string;
   }>({ open: false, bookingId: '', serviceId: '', serviceName: '' });
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewHover, setReviewHover] = useState(0);
   const [reviewComment, setReviewComment] = useState('');
   const [reviewLoading, setReviewLoading] = useState(false);
 
+  // Dispute state
   const [disputeModal, setDisputeModal] = useState<{
-    open: boolean;
-    bookingId: string;
-    serviceName: string;
-    totalPrice: number;
+    open: boolean; bookingId: string; serviceName: string; totalPrice: number;
   } | null>(null);
-  const [disputeForm, setDisputeForm] = useState({ reason: '', description: '', evidenceUrls: [] as string[] });
+  const [disputeForm, setDisputeForm] = useState({ reason: '', description: '' });
   const [disputeSubmitting, setDisputeSubmitting] = useState(false);
   const [disputeSuccess, setDisputeSuccess] = useState(false);
+
+  // Evidence images (up to 3)
+  const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
+  const [evidencePreviews, setEvidencePreviews] = useState<string[]>([]);
+  const [uploadMode, setUploadMode] = useState<'file' | 'url'>('file');
+  const [evidenceUrls, setEvidenceUrls] = useState<string[]>(['', '', '']);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (activeTab === 'services') fetchBookings();
@@ -80,7 +86,7 @@ const ClientBookings: React.FC = () => {
         status: selectedStatus !== 'all' ? selectedStatus : undefined,
       });
       setBookings(response.bookings || []);
-    } catch (error: any) {
+    } catch {
       showToast.error('Failed to load bookings');
       setBookings([]);
     } finally {
@@ -103,10 +109,7 @@ const ClientBookings: React.FC = () => {
   };
 
   const handleSubmitReview = async () => {
-    if (!reviewComment.trim()) {
-      showToast.error('Please write a comment');
-      return;
-    }
+    if (!reviewComment.trim()) { showToast.error('Please write a comment'); return; }
     try {
       setReviewLoading(true);
       await reviewService.createReview({
@@ -118,8 +121,7 @@ const ClientBookings: React.FC = () => {
       });
       showToast.success('Review submitted! Thank you.');
       setReviewModal({ open: false, bookingId: '', serviceId: '', serviceName: '' });
-      setReviewRating(5);
-      setReviewComment('');
+      setReviewRating(5); setReviewComment('');
     } catch (error: any) {
       showToast.error(error.response?.data?.message || 'Failed to submit review');
     } finally {
@@ -127,19 +129,72 @@ const ClientBookings: React.FC = () => {
     }
   };
 
+  // ── Evidence helpers ──────────────────────────────────────────
+  const addEvidenceFiles = (files: FileList | File[]) => {
+    const arr = Array.from(files);
+    const remaining = MAX_EVIDENCE - evidenceFiles.length;
+    if (remaining <= 0) return;
+    const toAdd = arr.slice(0, remaining).filter(f => {
+      if (!f.type.startsWith('image/')) { showToast.error('Only image files allowed'); return false; }
+      if (f.size > 5 * 1024 * 1024) { showToast.error(`${f.name} exceeds 5MB`); return false; }
+      return true;
+    });
+    setEvidenceFiles(prev => [...prev, ...toAdd]);
+    toAdd.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => setEvidencePreviews(prev => [...prev, reader.result as string]);
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeEvidenceFile = (idx: number) => {
+    setEvidenceFiles(prev => prev.filter((_, i) => i !== idx));
+    setEvidencePreviews(prev => prev.filter((_, i) => i !== idx));
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const resetDispute = () => {
+    setDisputeModal(null);
+    setDisputeSuccess(false);
+    setDisputeForm({ reason: '', description: '' });
+    setEvidenceFiles([]);
+    setEvidencePreviews([]);
+    setEvidenceUrls(['', '', '']);
+    setUploadMode('file');
+  };
+
   const handleFileDispute = async () => {
     if (!disputeModal) return;
     setDisputeSubmitting(true);
     try {
+      let finalUrls: string[] = [];
+
+      if (uploadMode === 'file' && evidenceFiles.length > 0) {
+        for (let i = 0; i < evidenceFiles.length; i++) {
+          try {
+            const formData = new FormData();
+            formData.append('image', evidenceFiles[i]);
+            const res: any = await api.post('/uploads/dispute-evidence', formData, {
+              headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            finalUrls.push(res.data?.url || res.url || evidencePreviews[i]);
+          } catch {
+            finalUrls.push(evidencePreviews[i]);
+          }
+        }
+      } else if (uploadMode === 'url') {
+        finalUrls = evidenceUrls.filter(u => u.trim() !== '');
+      }
+
       await api.post('/disputes', {
         bookingId: disputeModal.bookingId,
         reason: disputeForm.reason,
         description: disputeForm.description,
-        evidenceUrls: disputeForm.evidenceUrls,
+        evidenceUrls: finalUrls,
       });
       setDisputeSuccess(true);
     } catch (err: any) {
-      alert(err?.response?.data?.message || 'Failed to file dispute');
+      showToast.error(err?.response?.data?.message || 'Failed to file dispute');
     }
     setDisputeSubmitting(false);
   };
@@ -175,33 +230,15 @@ const ClientBookings: React.FC = () => {
       <div style={{ marginLeft: '280px', flex: 1, padding: '32px' }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
 
-          {/* Page Title */}
           <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#111', margin: '0 0 28px 0', fontFamily: 'Syne, sans-serif' }}>
             My Bookings
           </h1>
 
-          {/* Main Tabs: Services / Courses */}
-          <div style={{ display: 'flex', gap: '0', borderBottom: '2px solid #E5E7EB', marginBottom: '28px' }}>
-            {[
-              { key: 'services', label: '💆 Services' },
-              { key: 'courses', label: '📚 Courses' },
-            ].map(tab => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key as any)}
-                style={{
-                  padding: '14px 28px',
-                  background: 'none',
-                  border: 'none',
-                  fontFamily: 'Montserrat, sans-serif',
-                  fontSize: '15px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  color: activeTab === tab.key ? '#5B62B3' : '#6B7280',
-                  borderBottom: `3px solid ${activeTab === tab.key ? '#5B62B3' : 'transparent'}`,
-                  marginBottom: '-2px',
-                }}
-              >
+          {/* Main Tabs */}
+          <div style={{ display: 'flex', borderBottom: '2px solid #E5E7EB', marginBottom: '28px' }}>
+            {[{ key: 'services', label: '💆 Services' }, { key: 'courses', label: '📚 Courses' }].map(tab => (
+              <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
+                style={{ padding: '14px 28px', background: 'none', border: 'none', fontFamily: 'Montserrat, sans-serif', fontSize: '15px', fontWeight: 600, cursor: 'pointer', color: activeTab === tab.key ? '#5B62B3' : '#6B7280', borderBottom: `3px solid ${activeTab === tab.key ? '#5B62B3' : 'transparent'}`, marginBottom: '-2px' }}>
                 {tab.label}
               </button>
             ))}
@@ -210,31 +247,15 @@ const ClientBookings: React.FC = () => {
           {/* ── SERVICES TAB ── */}
           {activeTab === 'services' && (
             <div>
-              {/* Status filter tabs */}
               <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
                 {statusTabs.map(tab => (
-                  <button
-                    key={tab.key}
-                    onClick={() => setSelectedStatus(tab.key)}
-                    style={{
-                      padding: '7px 16px',
-                      borderRadius: '999px',
-                      border: '1.5px solid',
-                      borderColor: selectedStatus === tab.key ? '#5B62B3' : '#E5E7EB',
-                      backgroundColor: selectedStatus === tab.key ? '#5B62B3' : 'white',
-                      color: selectedStatus === tab.key ? 'white' : '#374151',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      fontFamily: 'Montserrat, sans-serif',
-                    }}
-                  >
+                  <button key={tab.key} onClick={() => setSelectedStatus(tab.key)}
+                    style={{ padding: '7px 16px', borderRadius: '999px', border: '1.5px solid', borderColor: selectedStatus === tab.key ? '#5B62B3' : '#E5E7EB', backgroundColor: selectedStatus === tab.key ? '#5B62B3' : 'white', color: selectedStatus === tab.key ? 'white' : '#374151', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}>
                     {tab.label}
                   </button>
                 ))}
               </div>
 
-              {/* Bookings List */}
               {loading ? (
                 <div style={{ padding: '60px', textAlign: 'center', color: '#666' }}>Loading bookings...</div>
               ) : bookings.length === 0 ? (
@@ -244,10 +265,8 @@ const ClientBookings: React.FC = () => {
                   <p style={{ color: '#9CA3AF', marginBottom: '24px' }}>
                     {selectedStatus === 'all' ? "You haven't made any bookings yet." : `No ${selectedStatus} bookings.`}
                   </p>
-                  <button
-                    onClick={() => navigate('/client/services')}
-                    style={{ padding: '12px 24px', backgroundColor: '#5B62B3', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}
-                  >
+                  <button onClick={() => navigate('/client/services')}
+                    style={{ padding: '12px 24px', backgroundColor: '#5B62B3', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600, cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}>
                     Browse Services
                   </button>
                 </div>
@@ -257,91 +276,45 @@ const ClientBookings: React.FC = () => {
                     const ss = STATUS_STYLE[booking.status] || STATUS_STYLE.pending;
                     return (
                       <div key={booking._id} style={{ backgroundColor: 'white', borderRadius: '16px', border: '1px solid #E5E7EB', overflow: 'hidden', display: 'flex', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                        {/* Image */}
                         <div style={{ width: '100px', flexShrink: 0 }}>
-                          <img
-                            src={getServiceImage(booking.serviceId)}
-                            alt={getServiceTitle(booking.serviceId)}
+                          <img src={getServiceImage(booking.serviceId)} alt={getServiceTitle(booking.serviceId)}
                             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                            onError={e => { e.currentTarget.src = 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=300&q=80'; }}
-                          />
+                            onError={e => { e.currentTarget.src = 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=300&q=80'; }} />
                         </div>
-
-                        {/* Content */}
                         <div style={{ flex: 1, padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
                           <div>
-                            <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#111', margin: '0 0 6px' }}>
-                              {getServiceTitle(booking.serviceId)}
-                            </h3>
+                            <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#111', margin: '0 0 6px' }}>{getServiceTitle(booking.serviceId)}</h3>
                             <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', fontSize: '13px', color: '#6B7280' }}>
-                              <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                <Calendar size={13} />
-                                {new Date(booking.bookingDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                              </span>
-                              <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                <Clock size={13} /> {booking.bookingTime}
-                              </span>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><Calendar size={13} />{new Date(booking.bookingDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><Clock size={13} /> {booking.bookingTime}</span>
                             </div>
-                            <div style={{ marginTop: '8px', fontSize: '14px', fontWeight: 700, color: '#5B62B3' }}>
-                              Rs. {booking.totalPrice?.toLocaleString()}
-                            </div>
+                            <div style={{ marginTop: '8px', fontSize: '14px', fontWeight: 700, color: '#5B62B3' }}>Rs. {booking.totalPrice?.toLocaleString()}</div>
                           </div>
-
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
-                            <span style={{ padding: '4px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: 700, backgroundColor: ss.bg, color: ss.color }}>
-                              {ss.label}
-                            </span>
+                            <span style={{ padding: '4px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: 700, backgroundColor: ss.bg, color: ss.color }}>{ss.label}</span>
                             {canCancel(booking) && (
-                              <button
-                                onClick={() => setCancelModal({ open: true, bookingId: booking._id, serviceName: getServiceTitle(booking.serviceId) })}
-                                style={{ padding: '6px 14px', backgroundColor: 'white', color: '#DC2626', border: '1.5px solid #DC2626', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}
-                              >
+                              <button onClick={() => setCancelModal({ open: true, bookingId: booking._id, serviceName: getServiceTitle(booking.serviceId) })}
+                                style={{ padding: '6px 14px', backgroundColor: 'white', color: '#DC2626', border: '1.5px solid #DC2626', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}>
                                 Cancel
                               </button>
                             )}
                             <button
-                              onClick={() => {
-                                const vendorId = typeof booking.vendorId === 'string' ? booking.vendorId : (booking.vendorId as any)?._id;
-                                navigate('/client/messages?vendorId=' + vendorId);
-                              }}
-                              style={{ padding: '6px 14px', backgroundColor: '#10B981', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'Montserrat, sans-serif', display: 'flex', alignItems: 'center', gap: '4px' }}
-                            >
+                              onClick={() => { const vendorId = typeof booking.vendorId === 'string' ? booking.vendorId : (booking.vendorId as any)?._id; navigate('/client/messages?vendorId=' + vendorId); }}
+                              style={{ padding: '6px 14px', backgroundColor: '#10B981', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}>
                               Chat
                             </button>
                             {booking.status === 'completed' && typeof booking.serviceId === 'object' && booking.serviceId !== null && (
-                              <>
-                                <button
-                                  onClick={() => {
-                                    const svc = booking.serviceId as { _id: string; title: string };
-                                    setReviewModal({ open: true, bookingId: booking._id, serviceId: svc._id, serviceName: svc.title });
-                                    setReviewRating(5);
-                                    setReviewComment('');
-                                  }}
-                                  style={{ padding: '6px 14px', backgroundColor: '#5B62B3', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'Montserrat, sans-serif', display: 'flex', alignItems: 'center', gap: '4px' }}
-                                >
-                                  <Star size={12} /> Leave Review
-                                </button>
-                              </>
+                              <button
+                                onClick={() => { const svc = booking.serviceId as { _id: string; title: string }; setReviewModal({ open: true, bookingId: booking._id, serviceId: svc._id, serviceName: svc.title }); setReviewRating(5); setReviewComment(''); }}
+                                style={{ padding: '6px 14px', backgroundColor: '#5B62B3', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', fontFamily: 'Montserrat, sans-serif', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <Star size={12} /> Leave Review
+                              </button>
                             )}
                             {(booking.status === 'completed' || booking.status === 'disputed') && (
                               <button
-                                onClick={() => setDisputeModal({
-                                  open: true,
-                                  bookingId: booking._id,
-                                  serviceName: getServiceTitle(booking.serviceId),
-                                  totalPrice: booking.totalPrice,
-                                })}
+                                onClick={() => setDisputeModal({ open: true, bookingId: booking._id, serviceName: getServiceTitle(booking.serviceId), totalPrice: booking.totalPrice })}
                                 disabled={booking.status === 'disputed'}
-                                style={{
-                                  padding: '6px 14px',
-                                  backgroundColor: booking.status === 'disputed' ? '#FEF3C7' : 'white',
-                                  color: booking.status === 'disputed' ? '#D97706' : '#DC2626',
-                                  border: `1.5px solid ${booking.status === 'disputed' ? '#D97706' : '#DC2626'}`,
-                                  borderRadius: '8px', fontSize: '12px', fontWeight: 600,
-                                  cursor: booking.status === 'disputed' ? 'not-allowed' : 'pointer',
-                                  fontFamily: 'Montserrat, sans-serif',
-                                }}
-                              >
+                                style={{ padding: '6px 14px', backgroundColor: booking.status === 'disputed' ? '#FEF3C7' : 'white', color: booking.status === 'disputed' ? '#D97706' : '#DC2626', border: `1.5px solid ${booking.status === 'disputed' ? '#D97706' : '#DC2626'}`, borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: booking.status === 'disputed' ? 'not-allowed' : 'pointer', fontFamily: 'Montserrat, sans-serif' }}>
                                 {booking.status === 'disputed' ? '⚠️ Under Dispute' : '⚑ Report Issue'}
                               </button>
                             )}
@@ -358,48 +331,30 @@ const ClientBookings: React.FC = () => {
           {/* ── COURSES TAB ── */}
           {activeTab === 'courses' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div
-                onClick={() => navigate('/client/my-courses')}
-                style={{ backgroundColor: 'white', borderRadius: '16px', border: '1px solid #E5E7EB', padding: '24px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 4px 16px rgba(91,98,179,0.1)')}
-                onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  <div style={{ width: '52px', height: '52px', borderRadius: '12px', backgroundColor: '#EEF2FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <BookOpen size={24} style={{ color: '#5B62B3' }} />
+              {[
+                { path: '/client/my-courses', icon: <BookOpen size={24} style={{ color: '#5B62B3' }} />, iconBg: '#EEF2FF', title: 'My Enrolled Courses', sub: 'View progress, lessons & certificates', arrowColor: '#5B62B3', hoverShadow: 'rgba(91,98,179,0.1)' },
+                { path: '/client/courses', icon: <Sparkles size={24} style={{ color: '#E91E63' }} />, iconBg: '#FFF0F6', title: 'Browse More Courses', sub: 'Discover new beauty & wellness courses', arrowColor: '#E91E63', hoverShadow: 'rgba(233,30,99,0.1)' },
+              ].map(item => (
+                <div key={item.path} onClick={() => navigate(item.path)}
+                  style={{ backgroundColor: 'white', borderRadius: '16px', border: '1px solid #E5E7EB', padding: '24px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                  onMouseEnter={e => (e.currentTarget.style.boxShadow = `0 4px 16px ${item.hoverShadow}`)}
+                  onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <div style={{ width: '52px', height: '52px', borderRadius: '12px', backgroundColor: item.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{item.icon}</div>
+                    <div>
+                      <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#111', margin: 0 }}>{item.title}</h3>
+                      <p style={{ fontSize: '13px', color: '#6B7280', margin: '4px 0 0' }}>{item.sub}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#111', margin: 0 }}>My Enrolled Courses</h3>
-                    <p style={{ fontSize: '13px', color: '#6B7280', margin: '4px 0 0' }}>View progress, lessons & certificates</p>
-                  </div>
+                  <ArrowRight size={20} style={{ color: item.arrowColor }} />
                 </div>
-                <ArrowRight size={20} style={{ color: '#5B62B3' }} />
-              </div>
-
-              <div
-                onClick={() => navigate('/client/courses')}
-                style={{ backgroundColor: 'white', borderRadius: '16px', border: '1px solid #E5E7EB', padding: '24px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 4px 16px rgba(233,30,99,0.1)')}
-                onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  <div style={{ width: '52px', height: '52px', borderRadius: '12px', backgroundColor: '#FFF0F6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Sparkles size={24} style={{ color: '#E91E63' }} />
-                  </div>
-                  <div>
-                    <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#111', margin: 0 }}>Browse More Courses</h3>
-                    <p style={{ fontSize: '13px', color: '#6B7280', margin: '4px 0 0' }}>Discover new beauty & wellness courses</p>
-                  </div>
-                </div>
-                <ArrowRight size={20} style={{ color: '#E91E63' }} />
-              </div>
+              ))}
             </div>
           )}
-
         </div>
       </div>
 
-      {/* Cancel Confirm Modal */}
+      {/* ── CANCEL MODAL ── */}
       <ConfirmModal
         isOpen={cancelModal.open}
         onClose={() => setCancelModal({ open: false, bookingId: '', serviceName: '' })}
@@ -411,59 +366,34 @@ const ClientBookings: React.FC = () => {
         cancelText="Keep Booking"
       />
 
-      {/* Review Modal */}
+      {/* ── REVIEW MODAL ── */}
       {reviewModal.open && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
           <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '32px', width: '100%', maxWidth: '440px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', fontFamily: 'Montserrat, sans-serif' }}>
             <h2 style={{ fontSize: '20px', fontWeight: 800, color: '#111', margin: '0 0 4px' }}>Leave a Review</h2>
             <p style={{ fontSize: '13px', color: '#6B7280', marginBottom: '24px' }}>{reviewModal.serviceName}</p>
-
             <div style={{ marginBottom: '20px' }}>
               <label style={{ fontSize: '13px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '10px' }}>Your Rating</label>
               <div style={{ display: 'flex', gap: '6px' }}>
-                {[1, 2, 3, 4, 5].map(star => (
-                  <button
-                    key={star}
-                    onMouseEnter={() => setReviewHover(star)}
-                    onMouseLeave={() => setReviewHover(0)}
-                    onClick={() => setReviewRating(star)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px' }}
-                  >
-                    <Star
-                      size={32}
-                      fill={(reviewHover || reviewRating) >= star ? '#F59E0B' : 'none'}
-                      stroke={(reviewHover || reviewRating) >= star ? '#F59E0B' : '#D1D5DB'}
-                      strokeWidth={1.5}
-                    />
+                {[1,2,3,4,5].map(star => (
+                  <button key={star} onMouseEnter={() => setReviewHover(star)} onMouseLeave={() => setReviewHover(0)} onClick={() => setReviewRating(star)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px' }}>
+                    <Star size={32} fill={(reviewHover || reviewRating) >= star ? '#F59E0B' : 'none'} stroke={(reviewHover || reviewRating) >= star ? '#F59E0B' : '#D1D5DB'} strokeWidth={1.5} />
                   </button>
                 ))}
               </div>
             </div>
-
             <div style={{ marginBottom: '24px' }}>
               <label style={{ fontSize: '13px', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '8px' }}>Your Comment</label>
-              <textarea
-                value={reviewComment}
-                onChange={e => setReviewComment(e.target.value)}
-                placeholder="Share your experience with this service..."
-                rows={4}
-                style={{ width: '100%', padding: '12px', border: '1.5px solid #E5E7EB', borderRadius: '10px', fontSize: '14px', fontFamily: 'Montserrat, sans-serif', resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
-              />
+              <textarea value={reviewComment} onChange={e => setReviewComment(e.target.value)} placeholder="Share your experience..." rows={4}
+                style={{ width: '100%', padding: '12px', border: '1.5px solid #E5E7EB', borderRadius: '10px', fontSize: '14px', fontFamily: 'Montserrat, sans-serif', resize: 'vertical', outline: 'none', boxSizing: 'border-box' }} />
             </div>
-
             <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                onClick={() => setReviewModal({ open: false, bookingId: '', serviceId: '', serviceName: '' })}
-                disabled={reviewLoading}
-                style={{ flex: 1, padding: '12px', backgroundColor: 'white', color: '#374151', border: '1.5px solid #E5E7EB', borderRadius: '10px', fontWeight: 600, fontSize: '14px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}
-              >
+              <button onClick={() => setReviewModal({ open: false, bookingId: '', serviceId: '', serviceName: '' })} disabled={reviewLoading}
+                style={{ flex: 1, padding: '12px', backgroundColor: 'white', color: '#374151', border: '1.5px solid #E5E7EB', borderRadius: '10px', fontWeight: 600, fontSize: '14px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}>
                 Cancel
               </button>
-              <button
-                onClick={handleSubmitReview}
-                disabled={reviewLoading}
-                style={{ flex: 2, padding: '12px', backgroundColor: '#5B62B3', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700, fontSize: '14px', cursor: reviewLoading ? 'not-allowed' : 'pointer', fontFamily: 'Montserrat, sans-serif', opacity: reviewLoading ? 0.7 : 1 }}
-              >
+              <button onClick={handleSubmitReview} disabled={reviewLoading}
+                style={{ flex: 2, padding: '12px', backgroundColor: '#5B62B3', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700, fontSize: '14px', cursor: reviewLoading ? 'not-allowed' : 'pointer', fontFamily: 'Montserrat, sans-serif', opacity: reviewLoading ? 0.7 : 1 }}>
                 {reviewLoading ? 'Submitting...' : 'Submit Review'}
               </button>
             </div>
@@ -471,66 +401,36 @@ const ClientBookings: React.FC = () => {
         </div>
       )}
 
-      {/* Dispute Modal */}
+      {/* ── DISPUTE MODAL ── */}
       {disputeModal?.open && (
-        <div style={{
-          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 9999, fontFamily: 'Montserrat, sans-serif',
-        }}>
-          <div style={{
-            backgroundColor: 'white', borderRadius: '20px',
-            padding: '32px', width: '100%', maxWidth: '520px',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-            border: '2px solid #FCA5A5',
-          }}>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '16px', fontFamily: 'Montserrat, sans-serif' }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '20px', padding: '28px', width: '100%', maxWidth: '540px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', border: '2px solid #FCA5A5' }}>
+
             {disputeSuccess ? (
               <div style={{ textAlign: 'center', padding: '20px' }}>
                 <div style={{ fontSize: '56px', marginBottom: '16px' }}>✅</div>
-                <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#111', marginBottom: '8px', fontFamily: 'Syne, sans-serif' }}>
-                  Dispute Filed Successfully
-                </h3>
-                <p style={{ color: '#6B7280', fontSize: '13px', marginBottom: '8px' }}>
-                  Your dispute has been submitted. The vendor has been notified and the payout has been frozen pending resolution.
-                </p>
-                <p style={{ color: '#5B62B3', fontSize: '12px', fontWeight: 600, marginBottom: '24px' }}>
-                  Our admin team will review within 24-48 hours.
-                </p>
-                <button
-                  onClick={() => { setDisputeModal(null); setDisputeSuccess(false); setDisputeForm({ reason: '', description: '', evidenceUrls: [] }); }}
-                  style={{ padding: '10px 24px', backgroundColor: '#5B62B3', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}
-                >
+                <h3 style={{ fontSize: '20px', fontWeight: 800, color: '#111', marginBottom: '8px', fontFamily: 'Syne, sans-serif' }}>Dispute Filed Successfully</h3>
+                <p style={{ color: '#6B7280', fontSize: '13px', marginBottom: '8px' }}>Your dispute has been submitted. The vendor has been notified and the payout has been frozen pending resolution.</p>
+                <p style={{ color: '#5B62B3', fontSize: '12px', fontWeight: 600, marginBottom: '24px' }}>Our admin team will review within 24–48 hours.</p>
+                <button onClick={resetDispute}
+                  style={{ padding: '10px 24px', backgroundColor: '#5B62B3', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 700, cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}>
                   Close
                 </button>
               </div>
             ) : (
               <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
                   <div>
-                    <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#111', fontFamily: 'Syne, sans-serif' }}>
-                      ⚑ Report an Issue
-                    </h3>
-                    <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6B7280' }}>
-                      {disputeModal.serviceName} · Rs. {disputeModal.totalPrice}
-                    </p>
+                    <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#111', fontFamily: 'Syne, sans-serif' }}>⚑ Report an Issue</h3>
+                    <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6B7280' }}>{disputeModal.serviceName} · Rs. {disputeModal.totalPrice?.toLocaleString()}</p>
                   </div>
-                  <button onClick={() => setDisputeModal(null)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#9CA3AF' }}>×</button>
+                  <button onClick={resetDispute} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#9CA3AF' }}>×</button>
                 </div>
 
                 <div style={{ marginBottom: '16px' }}>
-                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>
-                    Issue Category *
-                  </label>
-                  <select
-                    value={disputeForm.reason}
-                    onChange={e => setDisputeForm(p => ({ ...p, reason: e.target.value }))}
-                    style={{
-                      width: '100%', padding: '10px 14px', borderRadius: '10px',
-                      border: '1.5px solid #E5E7EB', fontSize: '13px',
-                      fontFamily: 'Montserrat, sans-serif', outline: 'none',
-                      backgroundColor: 'white',
-                    }}
-                  >
+                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>Issue Category *</label>
+                  <select value={disputeForm.reason} onChange={e => setDisputeForm(p => ({ ...p, reason: e.target.value }))}
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: `1.5px solid ${disputeForm.reason ? '#5B62B3' : '#E5E7EB'}`, fontSize: '13px', fontFamily: 'Montserrat, sans-serif', outline: 'none', backgroundColor: 'white', cursor: 'pointer' }}>
                     <option value="">Select a reason...</option>
                     <option value="overpricing">💰 Overpricing — charged more than platform price</option>
                     <option value="wrong_service">❌ Wrong Service — different service was provided</option>
@@ -541,61 +441,97 @@ const ClientBookings: React.FC = () => {
                 </div>
 
                 <div style={{ marginBottom: '16px' }}>
-                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>
-                    Describe the Issue * (min 20 characters)
-                  </label>
-                  <textarea
-                    value={disputeForm.description}
-                    onChange={e => setDisputeForm(p => ({ ...p, description: e.target.value }))}
-                    placeholder="Please describe what went wrong in detail..."
-                    rows={4}
-                    style={{
-                      width: '100%', padding: '10px 14px', borderRadius: '10px',
-                      border: '1.5px solid #E5E7EB', fontSize: '13px',
-                      fontFamily: 'Montserrat, sans-serif', resize: 'vertical' as const,
-                      outline: 'none', boxSizing: 'border-box' as const,
-                    }}
-                  />
-                  <p style={{ fontSize: '11px', color: disputeForm.description.length < 20 ? '#DC2626' : '#16a34a', margin: '4px 0 0' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>Describe the Issue * (min 20 characters)</label>
+                  <textarea value={disputeForm.description} onChange={e => setDisputeForm(p => ({ ...p, description: e.target.value }))} placeholder="Please describe what went wrong in detail..." rows={4}
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #E5E7EB', fontSize: '13px', fontFamily: 'Montserrat, sans-serif', resize: 'vertical' as const, outline: 'none', boxSizing: 'border-box' as const }} />
+                  <p style={{ fontSize: '11px', color: disputeForm.description.length < 20 ? '#DC2626' : '#16a34a', margin: '4px 0 0', fontWeight: 500 }}>
                     {disputeForm.description.length}/20 minimum characters
                   </p>
                 </div>
 
-                <div style={{ marginBottom: '24px' }}>
-                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>
-                    Evidence Photo URL (optional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Paste image URL as evidence..."
-                    onChange={e => setDisputeForm(p => ({ ...p, evidenceUrls: e.target.value ? [e.target.value] : [] }))}
-                    style={{
-                      width: '100%', padding: '10px 14px', borderRadius: '10px',
-                      border: '1.5px solid #E5E7EB', fontSize: '13px',
-                      fontFamily: 'Montserrat, sans-serif', outline: 'none',
-                      boxSizing: 'border-box' as const,
-                    }}
-                  />
+                <div style={{ marginBottom: '22px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151' }}>
+                      Evidence Photos <span style={{ fontWeight: 400, color: '#9CA3AF' }}>(up to {MAX_EVIDENCE}, optional)</span>
+                    </label>
+                    <div style={{ display: 'flex', gap: '3px', backgroundColor: '#F3F4F6', borderRadius: '8px', padding: '3px' }}>
+                      {(['file', 'url'] as const).map(mode => (
+                        <button key={mode}
+                          onClick={() => { setUploadMode(mode); setEvidenceFiles([]); setEvidencePreviews([]); setEvidenceUrls(['', '', '']); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                          style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', backgroundColor: uploadMode === mode ? '#fff' : 'transparent', color: uploadMode === mode ? '#5B62B3' : '#6B7280', boxShadow: uploadMode === mode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', transition: 'all 0.15s' }}>
+                          {mode === 'file' ? 'Upload' : 'URL'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {uploadMode === 'file' ? (
+                    <div>
+                      {evidencePreviews.length > 0 && (
+                        <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                          {evidencePreviews.map((src, idx) => (
+                            <div key={idx} style={{ position: 'relative', width: '100px', height: '80px', borderRadius: '10px', overflow: 'hidden', border: '1.5px solid #5B62B3', cursor: 'pointer' }} onClick={() => setLightboxSrc(src)}>
+                              <img src={src} alt={`Evidence ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <button
+                                onClick={e => { e.stopPropagation(); removeEvidenceFile(idx); }}
+                                style={{ position: 'absolute', top: '4px', right: '4px', backgroundColor: 'rgba(0,0,0,0.65)', border: 'none', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', padding: 0 }}>
+                                <X size={11} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {evidenceFiles.length < MAX_EVIDENCE && (
+                        <div
+                          onDrop={e => { e.preventDefault(); addEvidenceFiles(e.dataTransfer.files); }}
+                          onDragOver={e => e.preventDefault()}
+                          onClick={() => fileInputRef.current?.click()}
+                          style={{ border: '2px dashed #D1D5DB', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: '6px', cursor: 'pointer', backgroundColor: '#FAFAFA', transition: 'all 0.2s' }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = '#5B62B3'; e.currentTarget.style.backgroundColor = '#EEEEF8'; }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = '#D1D5DB'; e.currentTarget.style.backgroundColor = '#FAFAFA'; }}>
+                          <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: '#EEEEF8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Upload size={16} color="#5B62B3" />
+                          </div>
+                          <p style={{ margin: 0, fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                            {evidenceFiles.length === 0 ? 'Click or drag & drop photos' : `Add more (${evidenceFiles.length}/${MAX_EVIDENCE})`}
+                          </p>
+                          <p style={{ margin: 0, fontSize: '11px', color: '#9CA3AF' }}>PNG, JPG, WEBP · max 5MB each</p>
+                        </div>
+                      )}
+                      <input ref={fileInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
+                        onChange={e => { if (e.target.files) addEvidenceFiles(e.target.files); }} />
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '8px' }}>
+                      {[0, 1, 2].map(i => (
+                        <input key={i} type="url" value={evidenceUrls[i]} placeholder={`Photo URL ${i + 1}${i === 0 ? ' *' : ' (optional)'}`}
+                          onChange={e => setEvidenceUrls(prev => { const next = [...prev]; next[i] = e.target.value; return next; })}
+                          style={{ width: '100%', padding: '9px 14px', borderRadius: '10px', border: '1.5px solid #E5E7EB', fontSize: '13px', fontFamily: 'Montserrat, sans-serif', outline: 'none', boxSizing: 'border-box' as const }} />
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <button
                   disabled={!disputeForm.reason || disputeForm.description.length < 20 || disputeSubmitting}
                   onClick={handleFileDispute}
-                  style={{
-                    width: '100%', padding: '13px',
-                    backgroundColor: (!disputeForm.reason || disputeForm.description.length < 20) ? '#E5E7EB' : '#DC2626',
-                    color: (!disputeForm.reason || disputeForm.description.length < 20) ? '#9CA3AF' : 'white',
-                    border: 'none', borderRadius: '12px', fontWeight: 800,
-                    fontSize: '14px', cursor: (!disputeForm.reason || disputeForm.description.length < 20) ? 'not-allowed' : 'pointer',
-                    fontFamily: 'Montserrat, sans-serif',
-                    transition: 'background 0.2s',
-                  }}
-                >
+                  style={{ width: '100%', padding: '13px', backgroundColor: (!disputeForm.reason || disputeForm.description.length < 20) ? '#E5E7EB' : '#DC2626', color: (!disputeForm.reason || disputeForm.description.length < 20) ? '#9CA3AF' : 'white', border: 'none', borderRadius: '12px', fontWeight: 800, fontSize: '14px', cursor: (!disputeForm.reason || disputeForm.description.length < 20) ? 'not-allowed' : 'pointer', fontFamily: 'Montserrat, sans-serif', transition: 'background 0.2s' }}>
                   {disputeSubmitting ? 'Submitting...' : '⚑ Submit Dispute'}
                 </button>
               </>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ── LIGHTBOX ── */}
+      {lightboxSrc && (
+        <div onClick={() => setLightboxSrc(null)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.88)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', cursor: 'zoom-out' }}>
+          <img src={lightboxSrc} alt="Evidence" style={{ maxWidth: '90vw', maxHeight: '85vh', objectFit: 'contain', borderRadius: '12px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }} />
+          <button onClick={() => setLightboxSrc(null)} style={{ position: 'absolute', top: '20px', right: '20px', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff' }}>
+            <X size={18} />
+          </button>
         </div>
       )}
     </div>

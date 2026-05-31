@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { CheckCircle, XCircle, Loader } from 'lucide-react';
-import { paymentService } from '../../services/api/paymentService';
+import { verifyPayment as verifyPaymentApi } from '../../services/api/paymentService';
 
 const PaymentSuccess: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -25,7 +25,7 @@ const PaymentSuccess: React.FC = () => {
 
   const verifyPayment = async (data: string, type: string, id: string) => {
     try {
-      const res = await paymentService.verifyPayment(data, type, id);
+      const res = await verifyPaymentApi(data, type, id);
       if (res.data?.success) {
         setStatus('success');
         setMessage('Your payment was successful and your booking has been confirmed.');
@@ -93,7 +93,7 @@ const PaymentSuccess: React.FC = () => {
               </button>
               <button
                 onClick={() => navigate('/client/dashboard')}
-                style={{ padding: '14px', backgroundColor: 'white', color: '#6B7280', border: '2px solid #E5E7EB', borderRadius: '12px', fontWeight: 700, fontSize: '15px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}
+                style={{ padding: '14px', backgroundColor: 'white', color: '#5B7280', border: '2px solid #E5E7EB', borderRadius: '12px', fontWeight: 700, fontSize: '15px', cursor: 'pointer', fontFamily: 'Montserrat, sans-serif' }}
               >
                 Go to Dashboard
               </button>

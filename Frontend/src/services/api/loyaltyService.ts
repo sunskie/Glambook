@@ -4,8 +4,4 @@ export const loyaltyService = {
     const res = await api.get('/loyalty/balance');
     return res.data;
   },
-  redeemPoints: async (pointsToRedeem: number, bookingId: string) => {
-    const res = await api.post('/loyalty/redeem', { pointsToRedeem, bookingId });
-    return res.data;
-  },
 };

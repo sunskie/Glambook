@@ -54,8 +54,7 @@ const BookingPage: React.FC = () => {
   const [createdBookingId, setCreatedBookingId] = useState<string | null>(null);
   const [bookingStep, setBookingStep] = useState<'form' | 'payment'>('form');
   const [loyaltyData, setLoyaltyData] = useState<any>(null);
-  const [pointsToRedeem, setPointsToRedeem] = useState(0);
-  const [loyaltyDiscount, setLoyaltyDiscount] = useState(0);
+  const [applyLoyaltyDiscount, setApplyLoyaltyDiscount] = useState(false);
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState<string | null>(null);
@@ -165,10 +164,22 @@ const BookingPage: React.FC = () => {
         bookingDate: selectedDate,
         bookingTime: selectedTime,
         specialRequests: formData.specialRequests.trim(),
+        applyLoyaltyDiscount,
       });
       const bookingId = response.booking?._id || response.data?._id;
-      setCreatedBookingId(bookingId);
-      setBookingStep('payment');
+      const totalAmount = applyLoyaltyDiscount ? service!.price * 0.90 : service!.price;
+
+      navigate('/client/payment', {
+        state: {
+          bookingId,
+          totalAmount,
+          advanceAmount: Math.round(totalAmount * 0.15),
+          remainingAmount: Math.round(totalAmount * 0.85),
+          serviceName: service!.title,
+          bookingDate: selectedDate,
+          bookingTime: selectedTime,
+        },
+      });
     } catch (err: any) {
       showToast.error(err.response?.data?.message || 'Failed to create booking');
     } finally { setSubmitting(false); }
@@ -201,15 +212,15 @@ const BookingPage: React.FC = () => {
               <span style={{ fontWeight: 600, color: '#111', fontSize: '14px' }}>{selectedDate} at {selectedTime}</span>
             </div>
             <div style={{ height: '1px', backgroundColor: '#E5E7EB', margin: '12px 0' }} />
-            {loyaltyDiscount > 0 && (
+            {applyLoyaltyDiscount && (
               <div style={{ display: 'flex', justifyContent: 'space-between', color: '#16a34a', fontWeight: 600, fontSize: '14px' }}>
-                <span>Loyalty Discount</span>
-                <span>- Rs. {loyaltyDiscount.toFixed(0)}</span>
+                <span>GlamPoints Discount (10%)</span>
+                <span>- Rs. {(service.price * 0.10).toFixed(0)}</span>
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ fontWeight: 700, color: '#111', fontSize: '16px' }}>Total</span>
-              <span style={{ fontWeight: 700, color: '#5B62B3', fontSize: '16px' }}>Rs. {(service.price - loyaltyDiscount).toFixed(0)}</span>
+              <span style={{ fontWeight: 700, color: '#5B62B3', fontSize: '16px' }}>Rs. {applyLoyaltyDiscount ? (service.price * 0.90).toFixed(0) : service.price.toLocaleString()}</span>
             </div>
           </div>
 
@@ -235,7 +246,7 @@ const BookingPage: React.FC = () => {
             </p>
           </div>
 
-          <EsewaPaymentButton type="booking" id={createdBookingId} amount={service.price - loyaltyDiscount} />
+          <EsewaPaymentButton type="booking" id={createdBookingId} amount={applyLoyaltyDiscount ? service.price * 0.90 : service.price} />
 
           <button
             onClick={() => navigate('/client/bookings')}
@@ -562,59 +573,58 @@ const BookingPage: React.FC = () => {
                   </div>
                 )}
 
-                {loyaltyData && loyaltyData.points > 0 && (
+                {loyaltyData && (
                   <div style={{ padding: '16px', backgroundColor: '#EEF2FF', borderRadius: '12px', border: '1px solid #C7D2FE', marginTop: '8px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                      <div>
-                        <p style={{ margin: 0, fontWeight: 700, fontSize: '14px', color: '#5B62B3' }}>
-                          💎 Loyalty Points: {loyaltyData.points} pts
+                    {loyaltyData.discountUnlocked ? (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                          <div>
+                            <p style={{ margin: 0, fontWeight: 700, fontSize: '14px', color: '#5B62B3' }}>
+                              ✨ Reward Unlocked — 10% OFF available
+                            </p>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <input
+                            type="checkbox"
+                            id="applyLoyaltyDiscount"
+                            checked={applyLoyaltyDiscount}
+                            onChange={(e) => setApplyLoyaltyDiscount(e.target.checked)}
+                            style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                          />
+                          <label htmlFor="applyLoyaltyDiscount" style={{ fontSize: '13px', color: '#1A1C30', cursor: 'pointer', fontWeight: 500 }}>
+                            Apply GlamPoints Discount
+                          </label>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <p style={{ margin: 0, fontWeight: 700, fontSize: '14px', color: '#5B62B3' }}>
+                            💎 GlamPoints: {loyaltyData.points} / 100
+                          </p>
+                        </div>
+                        <div style={{ width: '100%', height: '8px', backgroundColor: '#E2E8F0', borderRadius: '9999px', overflow: 'hidden', marginBottom: '8px' }}>
+                          <div style={{ width: `${(loyaltyData.points / 100) * 100}%`, height: '100%', backgroundColor: '#5B62B3', borderRadius: '9999px' }} />
+                        </div>
+                        <p style={{ margin: 0, fontSize: '12px', color: '#6B7280', textAlign: 'center' }}>
+                          {loyaltyData.pointsToReward || (100 - loyaltyData.points)} more points to unlock your reward
                         </p>
-                        <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#6B7280' }}>
-                          1 point = Rs. 0.50 discount
-                        </p>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <p style={{ margin: 0, fontSize: '12px', color: '#6B7280' }}>Max redeemable</p>
-                        <p style={{ margin: 0, fontWeight: 700, fontSize: '14px', color: '#5B62B3' }}>
-                          Rs. {(loyaltyData.points * 0.5).toFixed(0)}
-                        </p>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <input
-                        type="range"
-                        min={0}
-                        max={loyaltyData.points}
-                        value={pointsToRedeem}
-                        onChange={(e) => {
-                          const pts = Number(e.target.value);
-                          setPointsToRedeem(pts);
-                          setLoyaltyDiscount(pts * 0.5);
-                        }}
-                        style={{ flex: 1 }}
-                      />
-                      <span style={{ fontWeight: 700, color: '#5B62B3', minWidth: '80px' }}>
-                        -{pointsToRedeem} pts
-                      </span>
-                    </div>
-                    {loyaltyDiscount > 0 && (
-                      <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#16a34a', fontWeight: 600 }}>
-                        ✅ Discount applied: Rs. {loyaltyDiscount.toFixed(0)}
-                      </p>
+                      </>
                     )}
                   </div>
                 )}
 
-                {loyaltyDiscount > 0 && (
+                {applyLoyaltyDiscount && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', color: '#16a34a', fontWeight: 600, fontSize: '14px' }}>
-                    <span>Loyalty Discount</span>
-                    <span>- Rs. {loyaltyDiscount.toFixed(0)}</span>
+                    <span>GlamPoints Discount (10%)</span>
+                    <span>- Rs. {(service.price * 0.10).toFixed(0)}</span>
                   </div>
                 )}
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '16px' }}>
                   <span>Total</span>
-                  <span style={{ color: '#5B62B3' }}>Rs. {(service.price - loyaltyDiscount).toFixed(0)}</span>
+                  <span style={{ color: '#5B62B3' }}>Rs. {applyLoyaltyDiscount ? (service.price * 0.90).toFixed(0) : service.price.toLocaleString()}</span>
                 </div>
 
                 <button onClick={handleBooking} disabled={submitting} className="confirm-btn"

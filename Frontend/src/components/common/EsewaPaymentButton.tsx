@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { paymentService } from '../../services/api/paymentService';
+import { initiatePayment, submitEsewaForm } from '../../services/api/paymentService';
 import showToast from './Toast';
 
 interface Props {
@@ -16,24 +16,8 @@ const EsewaPaymentButton: React.FC<Props> = ({ type, id, amount, disabled }) => 
     if (disabled || loading) return;
     try {
       setLoading(true);
-      const { paymentData, esewaUrl } = await paymentService.initiatePayment(type, id, amount);
-
-      // Build and submit hidden form to eSewa
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = esewaUrl;
-      form.style.display = 'none';
-
-      Object.entries(paymentData).forEach(([key, value]) => {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = key;
-        input.value = String(value);
-        form.appendChild(input);
-      });
-
-      document.body.appendChild(form);
-      form.submit();
+      const { esewaPayload } = await initiatePayment(id, amount, true);
+      submitEsewaForm(esewaPayload);
     } catch (err: any) {
       setLoading(false);
       showToast.error(err.message || 'Failed to initiate payment');
