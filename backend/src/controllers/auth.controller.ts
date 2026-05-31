@@ -135,6 +135,8 @@ export const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
 
+    console.log('Login attempt:', { email, passwordProvided: !!password });
+
     if (!email || !password) {
       return res.status(400).json({
         success: false,
@@ -143,6 +145,8 @@ export const login = async (req: Request, res: Response) => {
     }
 
     const user = await User.findOne({ email: email.toLowerCase() });
+    console.log('User lookup result:', { email: email.toLowerCase(), userFound: !!user, userDoc: user ? { _id: user._id, email: user.email, isActive: user.isActive } : null });
+
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -151,6 +155,8 @@ export const login = async (req: Request, res: Response) => {
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
+    console.log('Password validation:', { isPasswordValid, passwordLength: password.length, storedHashLength: user.password.length });
+
     if (!isPasswordValid) {
       return res.status(401).json({
         success: false,

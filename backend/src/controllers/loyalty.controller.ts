@@ -7,18 +7,16 @@ const POINT_VALUE = 0.5; // 1 point = Rs. 0.50 discount
 
 export const getLoyaltyBalance = async (req: Request, res: Response) => {
   try {
-    const user = await User.findById((req as any).user._id).select('loyaltyPoints totalPointsEarned name');
-    const nextTierPoints = 500;
-    const currentTier = (user?.loyaltyPoints || 0) >= 500 ? 'Gold' :
-                        (user?.loyaltyPoints || 0) >= 200 ? 'Silver' : 'Bronze';
+    const user = await User.findById((req as any).user._id).select('loyaltyPoints totalPointsEarned discountUnlocked name');
+    const pointsNeeded = 100;
+    const points = user?.loyaltyPoints || 0;
     res.json({
       success: true,
       data: {
-        points: user?.loyaltyPoints || 0,
+        points: points,
         totalEarned: user?.totalPointsEarned || 0,
-        tier: currentTier,
-        pointsToNextTier: Math.max(0, nextTierPoints - (user?.loyaltyPoints || 0)),
-        pointValue: POINT_VALUE,
+        discountUnlocked: user?.discountUnlocked || false,
+        pointsToReward: Math.max(0, pointsNeeded - points),
       }
     });
   } catch (err: any) {

@@ -2,6 +2,7 @@
 import { Request, Response } from 'express';
 import Booking from '../models/Booking.model';
 import Service from '../models/service.model';
+import User from '../models/User.model';
 import mongoose from 'mongoose';
 import { logger } from '../utils/logger';
 import { awardPoints } from './loyalty.controller';
@@ -17,10 +18,21 @@ export const createBooking = async (req: Request, res: Response) => {
       clientPhone,
       clientEmail,
       specialRequests,
+      applyLoyaltyDiscount,
     } = req.body;
+
+    console.log('Creating booking with req.body:', req.body);
 
     // Validate required fields
     if (!serviceId || !bookingDate || !bookingTime || !clientName || !clientPhone || !clientEmail) {
+      console.log('Missing required fields:', {
+        serviceId: !!serviceId,
+        bookingDate: !!bookingDate,
+        bookingTime: !!bookingTime,
+        clientName: !!clientName,
+        clientPhone: !!clientPhone,
+        clientEmail: !!clientEmail,
+      });
       return res.status(400).json({
         success: false,
         message: 'Please provide all required fields',
@@ -87,6 +99,21 @@ export const createBooking = async (req: Request, res: Response) => {
       });
     }
 
+    // Handle loyalty discount
+    let finalPrice = service.price;
+    let loyaltyDiscountApplied = false;
+
+    if (applyLoyaltyDiscount === true) {
+      const client = await User.findById((req as any).user._id);
+      if (client && client.discountUnlocked === true) {
+        finalPrice = Math.round(service.price * 0.90);
+        loyaltyDiscountApplied = true;
+        client.discountUnlocked = false;
+        client.loyaltyPoints = 0;
+        await client.save();
+      }
+    }
+
     // Create booking
     const booking = await Booking.create({
       serviceId,
@@ -95,12 +122,16 @@ export const createBooking = async (req: Request, res: Response) => {
       bookingDate: bookingDateTime,
       bookingTime,
       duration: service.duration,
-      totalPrice: service.price,
+      totalPrice: finalPrice,
+      totalAmount: finalPrice,
+      advanceAmount: 0,
+      remainingAmount: 0,
       clientName: clientName.trim(),
       clientPhone: clientPhone.trim(),
       clientEmail: clientEmail.toLowerCase().trim(),
       specialRequests: specialRequests?.trim(),
       status: 'pending',
+      loyaltyDiscountApplied,
     });
 
     // Populate booking details
@@ -122,6 +153,7 @@ export const createBooking = async (req: Request, res: Response) => {
       booking: populatedBooking,
     });
   } catch (error: any) {
+    console.error('Booking error:', error.message, error.stack);
     logger.error('Create booking error:', error);
     res.status(500).json({
       success: false,
@@ -317,8 +349,11 @@ export const cancelBooking = async (req: Request, res: Response) => {
     }
 
     // Update status
-    booking.status = 'cancelled';
-    await booking.save();
+    const updatedBooking = await Booking.findByIdAndUpdate(
+      id,
+      { status: 'cancelled' },
+      { new: true }
+    );
 
     logger.info('Booking cancelled', {
       bookingId: id,
@@ -328,7 +363,7 @@ export const cancelBooking = async (req: Request, res: Response) => {
     res.status(200).json({
       success: true,
       message: 'Booking cancelled successfully',
-      booking,
+      booking: updatedBooking,
     });
   } catch (error: any) {
     logger.error('Cancel booking error:', error);
@@ -385,12 +420,20 @@ export const updateBookingStatus = async (req: Request, res: Response) => {
     }
 
     // Update status
+    const previousStatus = booking.status;
     booking.status = status;
     await booking.save();
 
-    // Award loyalty points when booking is completed
-    if (status === 'completed') {
-      await awardPoints(booking._id.toString(), booking.totalPrice, booking.clientId.toString());
+    // Award GlamPoints when booking is completed
+    if (previousStatus !== 'completed' && status === 'completed') {
+      const client = await User.findById(booking.clientId);
+      if (client && booking.loyaltyDiscountApplied !== true) {
+        client.loyaltyPoints = (client.loyaltyPoints || 0) + 20;
+        if (client.loyaltyPoints >= 100) {
+          client.discountUnlocked = true;
+        }
+        await client.save();
+      }
     }
 
     logger.info('Booking status updated', {

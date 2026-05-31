@@ -2,6 +2,7 @@
 import { Request, Response } from 'express';
 import Enrollment from '../models/Enrollment.model';
 import Course from '../models/Course.model';
+import Quiz from '../models/Quiz.model';
 import mongoose from 'mongoose';
 import { logger } from '../utils/logger';
 
@@ -9,9 +10,54 @@ const isValidObjectId = (id: string): boolean => {
   return mongoose.Types.ObjectId.isValid(id);
 };
 
+// Helper: Check and update certificate eligibility
+const checkCertificateEligibility = async (enrollmentId: string) => {
+  try {
+    const enrollment = await Enrollment.findById(enrollmentId);
+    if (!enrollment) return;
+
+    const eligible =
+      enrollment.onlineCompleted === true &&
+      enrollment.quizPassed === true &&
+      enrollment.attendancePercentage >= 80 &&
+      enrollment.practicalPassed === true;
+
+    if (eligible !== enrollment.certificateEligible) {
+      await Enrollment.findByIdAndUpdate(
+        enrollmentId,
+        { certificateEligible: eligible },
+        { runValidators: false }
+      );
+    }
+  } catch (error) {
+    logger.error('Error checking certificate eligibility:', error);
+  }
+};
+
 // Create Enrollment (Client enrolls in course with batch selection)
 export const createEnrollment = async (req: Request, res: Response): Promise<void> => {
   try {
+    const clientId = (req as any).user._id;
+
+    // Remove orphaned enrollments where course no longer exists
+    try {
+      const orphaned = await Enrollment.find({
+        clientId
+      }).populate('courseId');
+
+      const orphanedIds = orphaned
+        .filter((e: any) => e.courseId === null)
+        .map(e => e._id);
+
+      if (orphanedIds.length > 0) {
+        await Enrollment.deleteMany({ _id: { $in: orphanedIds } });
+        console.log('Deleted orphaned enrollments:', orphanedIds);
+      }
+    } catch (cleanupError) {
+      console.error('Orphan cleanup error:', cleanupError);
+    }
+
+
     const {
       courseId,
       selectedBatchId,
@@ -22,7 +68,8 @@ export const createEnrollment = async (req: Request, res: Response): Promise<voi
       transactionId,
     } = req.body;
 
-    const clientId = (req as any).user._id;
+    console.log('Enrollment create called by:', (req as any).user?._id);
+    console.log('Enrollment body:', req.body);
 
     // Validation
     if (!courseId || !clientName || !clientEmail) {
@@ -76,28 +123,49 @@ export const createEnrollment = async (req: Request, res: Response): Promise<voi
       return;
     }
 
+    // Clean up abandoned pending_payment enrollments for this user+course
+    try {
+      await Enrollment.deleteMany({
+        clientId: clientId,
+        courseId: courseId,
+        status: 'pending_payment' as any,
+      });
+    } catch (cleanupErr) {
+      // non-fatal, continue
+    }
+
     // Check if already enrolled
     const existingEnrollment = await Enrollment.findOne({
       courseId,
       clientId,
-      status: { $in: ['enrolled', 'completed'] },
+      status: { $in: ['enrolled', 'completed', 'pending_payment'] },
     });
 
     if (existingEnrollment) {
-      res.status(400).json({
-        success: false,
-        message: 'You are already enrolled in this course',
-      });
-      return;
+      // If payment was cancelled/abandoned, allow re-enrollment by 
+      // deleting the stuck pending_payment enrollment
+      if ((existingEnrollment.status as string) === 'pending_payment') {
+        await Enrollment.deleteOne({ _id: existingEnrollment._id });
+        // abandoned payment — allow fresh enrollment
+      } else {
+        res.status(400).json({
+          success: false,
+          message: 'You are already enrolled in this course',
+        });
+        return;
+      }
     }
 
-    // Enforce max 2 active enrollments
-    const activeCount = await Enrollment.countDocuments({
+    // Enforce max 2 active enrollments (excluding deleted courses)
+    const activeEnrollments = await Enrollment.find({
       clientId,
-      status: { $ne: 'dropped' },
+      status: { $in: ['enrolled', 'active'] },
       progress: { $lt: 100 },
-    });
-    if (activeCount >= 2) {
+    }).populate('courseId');
+
+    const validEnrollments = activeEnrollments.filter((e: any) => e.courseId != null);
+
+    if (validEnrollments.length >= 2) {
       res.status(400).json({
         success: false,
         message: 'You can only be enrolled in 2 active courses at a time. Complete or drop a course before enrolling in a new one.',
@@ -161,7 +229,7 @@ export const createEnrollment = async (req: Request, res: Response): Promise<voi
 
     // Determine payment status
     const isFree = !finalPrice || finalPrice === 0;
-    const paymentStatus = isFree ? 'free' : (paymentMethod ? 'paid' : 'pending');
+    const paymentStatus = isFree ? 'free' : 'pending';
 
     // Create enrollment
     const enrollment = await Enrollment.create({
@@ -170,16 +238,19 @@ export const createEnrollment = async (req: Request, res: Response): Promise<voi
       vendorId: course.vendorId,
       ...batchData,
       totalPrice: finalPrice,
+      totalAmount: finalPrice,
+      advanceAmount: 0,
+      remainingAmount: finalPrice,
       clientName: clientName.trim(),
       clientPhone: clientPhone?.trim() || "",
       clientEmail: clientEmail.toLowerCase().trim(),
-      status: 'enrolled',
+      status: (isFree || paymentMethod === 'mock' ? 'enrolled' : 'pending_payment') as any,
       paymentStatus,
       paymentMethod: paymentMethod || (isFree ? 'free' : null),
       transactionId: transactionId || null,
       progress: 0,
       lessonsProgress,
-      completedLessons: 0,
+      completedLessons: [],
       totalLessons: course.lessons.length,
       practicalAttendance: [],
     });
@@ -294,6 +365,55 @@ export const getEnrollmentById = async (req: Request, res: Response): Promise<vo
     res.status(200).json({ success: true, data: enrollment });
   } catch (error: any) {
     logger.error('Get enrollment error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch enrollment',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+    });
+  }
+};
+
+// Get Enrollment By Course (for Online Certificate - only checks progress + quiz)
+export const getEnrollmentByCourse = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = (req as any).user._id.toString();
+    const { courseId } = req.params;
+
+    if (!isValidObjectId(courseId)) {
+      res.status(400).json({ success: false, message: 'Invalid course ID' });
+      return;
+    }
+
+    const enrollment = await Enrollment.findOne({
+      clientId: userId,
+      courseId,
+    })
+      .populate({
+        path: 'courseId',
+        populate: { path: 'vendorId', select: 'name' }
+      })
+      .populate('clientId', 'name email');
+
+    if (!enrollment) {
+      res.status(404).json({ success: false, message: 'Enrollment not found' });
+      return;
+    }
+
+    const onlineCertEligible = enrollment.progress === 100 && enrollment.quizPassed === true;
+
+    if (!onlineCertEligible) {
+      res.status(403).json({
+        success: false,
+        message: 'Complete all lessons and pass the quiz first',
+        progress: enrollment.progress,
+        quizPassed: enrollment.quizPassed,
+      });
+      return;
+    }
+
+    res.status(200).json({ success: true, data: enrollment });
+  } catch (error: any) {
+    logger.error('Get enrollment by course error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch enrollment',
@@ -464,11 +584,9 @@ export const markAttendance = async (req: Request, res: Response): Promise<void>
     );
 
     if (existingIndex >= 0) {
-      // Update existing
       (enrollment.practicalAttendance[existingIndex] as any).attended = attended;
       (enrollment.practicalAttendance[existingIndex] as any).notes = notes || '';
     } else {
-      // Add new
       enrollment.practicalAttendance.push({
         date: attendanceDate,
         attended,
@@ -600,7 +718,6 @@ export const updateEnrollmentStatus = async (req: Request, res: Response): Promi
     if (status === 'completed') {
       enrollment.progress = 100;
       enrollment.completionDate = new Date();
-      // Mark all lessons as completed
       (enrollment.lessonsProgress ?? []).forEach((lp: any) => {
         if (!lp.completed) {
           lp.completed = true;
@@ -724,10 +841,11 @@ export const submitQuiz = async (req: Request, res: Response) => {
     if (enrollment.progress < 100) return res.status(400).json({ success: false, message: 'Complete all lessons before taking the quiz' });
 
     const course = enrollment.courseId as any;
-    const questions = course?.quiz?.questions || [];
+
+    const quiz = await Quiz.findOne({ courseId: course._id });
+    const questions = quiz?.questions || [];
     if (questions.length === 0) return res.status(400).json({ success: false, message: 'No quiz available' });
 
-    // Calculate score
     let correct = 0;
     questions.forEach((q: any, i: number) => {
       if (answers[i] !== undefined && answers[i] === q.correctAnswer) correct++;
@@ -735,24 +853,109 @@ export const submitQuiz = async (req: Request, res: Response) => {
     const score = Math.round((correct / questions.length) * 100);
     const passed = score >= 70;
 
-    enrollment.quizScore = score;
-    enrollment.quizAttempts = (enrollment.quizAttempts || 0) + 1;
-    enrollment.quizPassed = passed;
+    await Enrollment.updateOne(
+      { _id: enrollment._id },
+      {
+        $set: {
+          quizScore: score,
+          quizAttempts: (enrollment.quizAttempts || 0) + 1,
+          quizPassed: passed,
+          quizStatus: passed ? 'pending_approval' : 'failed'
+        }
+      }
+    );
 
-    if (passed && !enrollment.certificateIssued) {
-      enrollment.certificateIssued = true;
-      enrollment.certificateId = `GLB-${new Date().getFullYear()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
-      enrollment.certificateIssuedAt = new Date();
-    }
-
-    await enrollment.save();
-    res.json({ success: true, score, passed, certificateId: enrollment.certificateId });
+    res.json({ success: true, score, passed, quizStatus: passed ? 'pending_approval' : 'failed' });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// Get certificate data
+// Approve quiz (vendor only)
+export const approveQuiz = async (req: Request, res: Response) => {
+  try {
+    const { enrollmentId } = req.params;
+    const enrollment = await Enrollment.findById(enrollmentId).populate('courseId clientId');
+
+    if (!enrollment) {
+      return res.status(404).json({ success: false, message: 'Enrollment not found' });
+    }
+
+    if (enrollment.quizStatus !== 'pending_approval') {
+      return res.status(400).json({ success: false, message: 'Quiz is not pending approval' });
+    }
+
+    if (!enrollment.quizPassed) {
+      return res.status(400).json({ success: false, message: 'Quiz was not passed' });
+    }
+
+    enrollment.certificateIssued = true;
+    enrollment.certificateId = `GLB-${new Date().getFullYear()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+    enrollment.certificateIssuedAt = new Date();
+    enrollment.quizStatus = 'approved';
+    enrollment.status = 'completed';
+
+    await enrollment.save();
+
+    res.json({ success: true, message: 'Quiz approved and certificate issued', certificateId: enrollment.certificateId });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Reject quiz (vendor only)
+export const rejectQuiz = async (req: Request, res: Response) => {
+  try {
+    const { enrollmentId } = req.params;
+    const { reason } = req.body;
+
+    const enrollment = await Enrollment.findById(enrollmentId);
+
+    if (!enrollment) {
+      return res.status(404).json({ success: false, message: 'Enrollment not found' });
+    }
+
+    if (enrollment.quizStatus !== 'pending_approval') {
+      return res.status(400).json({ success: false, message: 'Quiz is not pending approval' });
+    }
+
+    enrollment.quizStatus = 'rejected';
+    enrollment.quizAttempts = 0;
+    enrollment.quizScore = undefined;
+    enrollment.quizPassed = false;
+
+    await enrollment.save();
+
+    res.json({ success: true, message: 'Quiz rejected. Student can retake the quiz.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Get pending approvals (vendor only)
+export const getPendingApprovals = async (req: Request, res: Response) => {
+  try {
+    const vendorId = (req as any).user._id;
+
+    const pendingApprovals = await Enrollment.find({
+      quizStatus: 'pending_approval',
+    })
+      .populate({
+        path: 'courseId',
+        match: { vendorId: vendorId },
+      })
+      .populate('clientId', 'name email')
+      .lean();
+
+    const filtered = pendingApprovals.filter((e: any) => e.courseId !== null);
+
+    res.json({ success: true, data: filtered });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Get certificate data (Final Professional Certificate)
 export const getCertificate = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
@@ -762,8 +965,18 @@ export const getCertificate = async (req: Request, res: Response) => {
       .populate({ path: 'courseId', populate: { path: 'vendorId', select: 'name' } })
       .populate('clientId', 'name email');
 
-    if (!enrollment?.certificateIssued) {
-      return res.status(404).json({ success: false, message: 'Certificate not yet issued' });
+    if (!enrollment) {
+      return res.status(404).json({ success: false, message: 'Enrollment not found' });
+    }
+
+    const finalCertificateEligible =
+      enrollment.progress === 100 &&
+      enrollment.quizPassed === true &&
+      enrollment.attendancePercentage >= 80 &&
+      enrollment.practicalPassed === true;
+
+    if (!finalCertificateEligible) {
+      return res.status(404).json({ success: false, message: 'You are not eligible for the final certificate yet' });
     }
 
     res.json({ success: true, data: { enrollment, certificateId: enrollment.certificateId } });
@@ -772,27 +985,243 @@ export const getCertificate = async (req: Request, res: Response) => {
   }
 };
 
-// Public certificate verification
-export const verifyCertificate = async (req: Request, res: Response) => {
+// Mark Attendance New - Mark student present/absent for a date
+export const markAttendanceNew = async (req: Request, res: Response) => {
   try {
-    const { certificateId } = req.params;
-    const enrollment = await Enrollment.findOne({ certificateId })
-      .populate({ path: 'courseId', populate: { path: 'vendorId', select: 'name' } })
-      .populate('clientId', 'name email');
+    const { enrollmentId } = req.params;
+    const { date, status } = req.body;
+    const vendorId = (req as any).user._id;
 
-    if (!enrollment) return res.status(404).json({ success: false, message: 'Certificate not found or invalid' });
+    if (!isValidObjectId(enrollmentId)) {
+      return res.status(400).json({ success: false, message: 'Invalid enrollment ID' });
+    }
 
-    res.json({
-      success: true,
-      data: {
-        studentName: (enrollment.clientId as any)?.name,
-        courseName: (enrollment.courseId as any)?.title,
-        completedAt: enrollment.certificateIssuedAt,
-        certificateId: enrollment.certificateId,
-        issuedBy: (enrollment.courseId as any)?.vendorId?.name || 'GlamBook Academy',
-      }
+    const enrollment = await Enrollment.findById(enrollmentId);
+    if (!enrollment) {
+      return res.status(404).json({ success: false, message: 'Enrollment not found' });
+    }
+
+    const course = await Course.findById(enrollment.courseId);
+    if (!course || course.vendorId.toString() !== vendorId.toString()) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    const attendanceDate = new Date(date);
+    const existingIndex = enrollment.attendanceLog.findIndex(
+      (log: any) => new Date(log.date).toDateString() === attendanceDate.toDateString()
+    );
+
+    if (existingIndex >= 0) {
+      enrollment.attendanceLog[existingIndex].status = status;
+    } else {
+      enrollment.attendanceLog.push({ date: attendanceDate, status, markedBy: vendorId });
+      enrollment.totalClasses = (enrollment.totalClasses || 0) + 1;
+    }
+
+    const attended = enrollment.attendanceLog.filter((l: any) => l.status === 'present').length;
+    enrollment.attendedClasses = attended;
+    enrollment.attendancePercentage = enrollment.totalClasses > 0
+      ? Math.round((attended / enrollment.totalClasses) * 100)
+      : 0;
+
+    await Enrollment.findByIdAndUpdate(
+      enrollmentId,
+      {
+        attendanceLog: enrollment.attendanceLog,
+        totalClasses: enrollment.totalClasses,
+        attendedClasses: enrollment.attendedClasses,
+        attendancePercentage: enrollment.attendancePercentage,
+      },
+      { runValidators: false }
+    );
+
+    await checkCertificateEligibility(enrollmentId);
+
+    const updated = await Enrollment.findById(enrollmentId).populate('clientId', 'name email');
+
+    // ✅ FIX: null guard before accessing updated fields
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Enrollment not found after update' });
+    }
+
+    logger.info('Attendance marked', {
+      enrollmentId,
+      date,
+      status,
+      attendance: `${updated.attendedClasses}/${updated.totalClasses}`,
     });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
+
+    res.json({ success: true, message: 'Attendance marked', data: updated });
+  } catch (error: any) {
+    logger.error('Mark attendance error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Approve Practical - Mark practical training as passed
+export const approvePractical = async (req: Request, res: Response) => {
+  try {
+    const { enrollmentId } = req.params;
+    const vendorId = (req as any).user._id;
+
+    if (!isValidObjectId(enrollmentId)) {
+      return res.status(400).json({ success: false, message: 'Invalid enrollment ID' });
+    }
+
+    const enrollment = await Enrollment.findById(enrollmentId);
+    if (!enrollment) {
+      return res.status(404).json({ success: false, message: 'Enrollment not found' });
+    }
+
+    const course = await Course.findById(enrollment.courseId);
+    if (!course || course.vendorId.toString() !== vendorId.toString()) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    await Enrollment.findByIdAndUpdate(
+      enrollmentId,
+      { practicalPassed: true },
+      { runValidators: false }
+    );
+
+    await checkCertificateEligibility(enrollmentId);
+
+    const updated = await Enrollment.findById(enrollmentId).populate('clientId', 'name email');
+
+    // ✅ FIX: null guard
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Enrollment not found after update' });
+    }
+
+    logger.info('Practical approved', { enrollmentId, vendorId });
+
+    res.json({ success: true, message: 'Practical approved', data: updated });
+  } catch (error: any) {
+    logger.error('Approve practical error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Public certificate verification by certificate ID
+export const verifyCertificate = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { certId } = req.params;
+ 
+    if (!certId || typeof certId !== 'string' || certId.trim() === '') {
+      res.status(400).json({ valid: false, message: 'Invalid certificate ID format' });
+      return;
+    }
+ 
+    const id = certId.trim();
+ 
+    // Strategy 1: exact match on certificateId field (GLB-YYYY-XXXXXX issued via approveQuiz)
+    let enrollment = await Enrollment.findOne({ certificateId: id })
+      .populate('courseId', 'title lessons')
+      .populate('clientId', 'name email')
+      .lean();
+ 
+    // Strategy 2: OC-XXXXXXXX format generated by OnlineCertificate frontend
+    // format is OC-{last 8 chars of _id uppercased}
+    if (!enrollment && id.startsWith('OC-')) {
+      const suffix = id.replace('OC-', '').toLowerCase();
+      const all = await Enrollment.find({ quizPassed: true })
+        .populate('courseId', 'title lessons')
+        .populate('clientId', 'name email')
+        .lean();
+      enrollment = all.find((e: any) =>
+        e._id.toString().slice(-8).toUpperCase() === suffix.toUpperCase()
+      ) ?? null;
+    }
+ 
+    // Strategy 3: legacy GLB- format — match last 6 chars of _id
+    if (!enrollment && id.includes('-')) {
+      const suffix = id.split('-').pop()?.toLowerCase();
+      if (suffix && suffix.length >= 6) {
+        const all = await Enrollment.find({ quizPassed: true })
+          .populate('courseId', 'title lessons')
+          .populate('clientId', 'name email')
+          .lean();
+        enrollment = all.find((e: any) =>
+          e._id.toString().slice(-suffix.length).toLowerCase() === suffix
+        ) ?? null;
+      }
+    }
+ 
+    if (!enrollment) {
+      res.status(404).json({ valid: false, message: 'Certificate not found or invalid' });
+      return;
+    }
+ 
+    // Must have passed quiz and completed all lessons
+    const totalLessons =
+      (enrollment.courseId as any)?.lessons?.length ||
+      enrollment.totalLessons ||
+      1;
+ 
+    const completedCount =
+      enrollment.completedLessons?.length || 0;
+ 
+    const progress =
+      enrollment.progress ??
+      Math.round((completedCount / totalLessons) * 100);
+ 
+    if (progress < 100 || !enrollment.quizPassed) {
+      res.status(403).json({
+        valid: false,
+        message: 'Certificate conditions not met',
+      });
+      return;
+    }
+ 
+    res.status(200).json({
+      valid: true,
+      student: { name: (enrollment.clientId as any)?.name || 'Student' },
+      course:  { title: (enrollment.courseId as any)?.title || 'Course' },
+      vendor: 'GlamBook Academy',
+      quizScore: enrollment.quizScore,
+      completedLessons: completedCount,
+      totalLessons,
+      progress,
+      completionDate:
+        (enrollment as any).onlineCertificateIssuedAt ||
+        (enrollment as any).quizSubmittedAt ||
+        (enrollment as any).updatedAt ||
+        new Date(),
+      attendanceStatus:
+        ((enrollment as any).attendancePercentage || 0) >= 80 ? 'verified' : 'pending',
+      practicalStatus: (enrollment as any).practicalPassed ? 'approved' : 'pending',
+      certId: id,
+      verifiedAt: new Date(),
+    });
+  } catch (error: any) {
+    logger.error('Verify certificate error:', error);
+    res.status(500).json({ valid: false, message: error.message });
+  }
+};
+// Get Course Students - Vendor gets all students for a course with full progress
+export const getCourseStudents = async (req: Request, res: Response) => {
+  try {
+    const { courseId } = req.params;
+    const vendorId = (req as any).user._id;
+
+    if (!isValidObjectId(courseId)) {
+      return res.status(400).json({ success: false, message: 'Invalid course ID' });
+    }
+
+    const course = await Course.findById(courseId);
+    if (!course || course.vendorId.toString() !== vendorId.toString()) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    const enrollments = await Enrollment.find({ courseId })
+      .populate('clientId', 'name email phone')
+      .lean();
+
+    logger.info('Course students fetched', { courseId, count: enrollments.length });
+
+    res.json({ success: true, data: enrollments });
+  } catch (error: any) {
+    logger.error('Get course students error:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };

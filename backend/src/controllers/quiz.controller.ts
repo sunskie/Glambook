@@ -156,6 +156,10 @@ export const submitQuiz = async (req: AuthRequest, res: Response) => {
 
     // Update enrollment
     await Enrollment.findByIdAndUpdate(enrollment._id, {
+      quizPassed: true,
+      quizScore: score,
+      quizSubmittedAt: new Date(),
+      onlineCertificateIssuedAt: new Date(),
       certificateIssued: true,
       certificateUrl: `/certificate/${certificateId}`,
       certificateIssuedDate: new Date(),

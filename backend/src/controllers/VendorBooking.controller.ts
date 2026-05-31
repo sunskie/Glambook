@@ -85,8 +85,11 @@ export const updateBookingStatus = async (req: Request, res: Response) => {
       });
     }
 
-    booking.status = status as any;
-    await booking.save();
+    await Booking.findByIdAndUpdate(
+  id,
+  { status },
+  { new: true, runValidators: false }
+);
 
     const updatedBooking = await Booking.findById(id)
       .populate('serviceId', 'title category price duration imageUrl')

@@ -10,6 +10,23 @@ const isValidObjectId = (id: string): boolean => {
   return mongoose.Types.ObjectId.isValid(id);
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// THE CORE FIX:
+//
+// Before: files were assigned by a shared counter across ALL lessons.
+//   videoFiles[0] → lesson 0 (even if lesson 0 is a PDF)
+//   videoFiles[1] → lesson 1 (even if it doesn't exist)
+//
+// After: each lesson type has its OWN counter.
+//   We keep a separate videoIndex and pdfIndex.
+//   When lesson.contentType === 'video' → pick videoFiles[videoIndex++]
+//   When lesson.contentType === 'pdf'   → pick pdfFiles[pdfIndex++]
+//   When lesson.contentType === 'article' → use contentUrl string directly
+//
+// This means no matter what ORDER the vendor uploads lessons,
+// each file goes to the correct lesson.
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Create Course (Vendor)
 export const createCourse = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -35,7 +52,7 @@ export const createCourse = async (req: Request, res: Response): Promise<void> =
 
     const vendorId = (req as any).user._id;
 
-    // Validation
+    // ── Validation ────────────────────────────────────────────
     const errors: string[] = [];
     if (!title?.trim()) errors.push('Title is required');
     if (!description?.trim()) errors.push('Description is required');
@@ -53,54 +70,94 @@ export const createCourse = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Process lessons — parse metadata sent as JSON string
+    // ── Parse lessons metadata ────────────────────────────────
     const lessonsRaw = req.body.lessons;
     const lessonsData = lessonsRaw
       ? (typeof lessonsRaw === 'string' ? JSON.parse(lessonsRaw) : lessonsRaw)
       : [];
-    const lessonsArray = Array.isArray(lessonsData) ? lessonsData : [lessonsData];
+    const lessonsArray: any[] = Array.isArray(lessonsData) ? lessonsData : [lessonsData];
 
+    // ── Get uploaded files ────────────────────────────────────
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
     const videoFiles = files?.['lessonVideo'] || [];
-    const pdfFiles = files?.['lessonPdf'] || [];
+    const pdfFiles   = files?.['lessonPdf']   || [];
+
+    console.log('Video files received:', videoFiles.map(f => f.filename));
+    console.log('PDF files received:', pdfFiles.map(f => f.filename));
+
+    // ── THE FIX: separate counters per content type ───────────
+    let videoIndex = 0;
+    let pdfIndex   = 0;
 
     const processedLessons = lessonsArray.map((lesson: any, index: number) => {
-      const videoFile = videoFiles[index];
-      const pdfFile = pdfFiles[index];
-
-      // Duration: use what vendor entered, no minimum enforced
+      const contentType: string = lesson.contentType || 'video';
       const lessonDuration = parseInt(lesson.duration) || 0;
 
-      // Max 2 hours (120 min) only
-      if (lesson.contentType === 'video' && lessonDuration > 120) {
+      // Max 2 hours for video only
+      if (contentType === 'video' && lessonDuration > 120) {
         throw new Error(
           `Lesson ${index + 1} ("${lesson.title || `Lesson ${index + 1}`}"): video cannot exceed 2 hours (120 min). Got ${lessonDuration} min.`
         );
       }
 
+      let contentUrl = '';
+
+      if (contentType === 'video') {
+        // Pick the next video file for this video-type lesson
+        const videoFile = videoFiles[videoIndex];
+        if (videoFile) {
+          contentUrl = `/uploads/courses/videos/${videoFile.filename}`;
+          console.log(`Lesson ${index + 1} (video): assigned file ${videoFile.filename}`);
+        } else {
+          // No file uploaded for this video lesson — use article URL as fallback
+          contentUrl = lesson.contentUrl || '';
+          console.warn(`Lesson ${index + 1} (video): no video file found at videoIndex ${videoIndex}`);
+        }
+        videoIndex++;
+
+      } else if (contentType === 'pdf') {
+        // Pick the next PDF file for this pdf-type lesson
+        const pdfFile = pdfFiles[pdfIndex];
+        if (pdfFile) {
+          contentUrl = `/uploads/courses/pdfs/${pdfFile.filename}`;
+          console.log(`Lesson ${index + 1} (pdf): assigned file ${pdfFile.filename}`);
+        } else {
+          contentUrl = lesson.contentUrl || '';
+          console.warn(`Lesson ${index + 1} (pdf): no pdf file found at pdfIndex ${pdfIndex}`);
+        }
+        pdfIndex++;
+
+      } else if (contentType === 'article') {
+        // Article: just use the URL string the vendor typed
+        contentUrl = lesson.contentUrl || '';
+        console.log(`Lesson ${index + 1} (article): url = ${contentUrl}`);
+      }
+
       return {
-        title: lesson.title || `Lesson ${index + 1}`,
+        title:       lesson.title || `Lesson ${index + 1}`,
         description: lesson.description || '',
-        contentType: lesson.contentType || 'video',
-        duration: lessonDuration,
-        isPreview: lesson.isPreview === 'true' || lesson.isPreview === true,
-        contentUrl: videoFile
-          ? `/uploads/courses/videos/${videoFile.filename}`
-          : pdfFile
-          ? `/uploads/courses/pdfs/${pdfFile.filename}`
-          : (lesson.contentUrl || ''),
-        orderIndex: index,
+        contentType,
+        duration:    lessonDuration,
+        isPreview:   lesson.isPreview === 'true' || lesson.isPreview === true,
+        contentUrl,
+        orderIndex:  index,
       };
     });
 
-    // Handle thumbnail
+    console.log('Processed lessons:', processedLessons.map(l => ({
+      title: l.title,
+      contentType: l.contentType,
+      contentUrl: l.contentUrl,
+    })));
+
+    // ── Handle thumbnail ──────────────────────────────────────
     const thumbnailFiles = (req.files as any)?.['thumbnail'];
     const thumbnailFile = thumbnailFiles?.[0];
     const thumbnail = thumbnailFile
       ? `/uploads/courses/thumbnails/${thumbnailFile.filename}`
       : (req.body.thumbnail || '');
 
-    // Parse JSON fields
+    // ── Parse JSON fields ─────────────────────────────────────
     const parsedLearning = whatYouWillLearn
       ? (typeof whatYouWillLearn === 'string' ? JSON.parse(whatYouWillLearn) : whatYouWillLearn)
       : [];
@@ -117,25 +174,26 @@ export const createCourse = async (req: Request, res: Response): Promise<void> =
       ? (typeof batches === 'string' ? JSON.parse(batches) : batches)
       : [];
 
+    // ── Create course ─────────────────────────────────────────
     const course = await Course.create({
-      title: title.trim(),
-      description: description.trim(),
+      title:            title.trim(),
+      description:      description.trim(),
       category,
-      price: parseFloat(price),
-      discountPrice: discountPrice ? parseFloat(discountPrice) : null,
-      duration: parseInt(duration),
-      level: level || 'beginner',
+      price:            parseFloat(price),
+      discountPrice:    discountPrice ? parseFloat(discountPrice) : null,
+      duration:         parseInt(duration),
+      level:            level || 'beginner',
       vendorId,
-      imageUrl: thumbnail || null,
+      imageUrl:         thumbnail || null,
       whatYouWillLearn: parsedLearning,
-      requirements: parsedRequirements,
-      courseFormat: parsedFormat,
-      instructorName: instructorName.trim(),
-      instructorBio: instructorBio || '',
+      requirements:     parsedRequirements,
+      courseFormat:     parsedFormat,
+      instructorName:   instructorName.trim(),
+      instructorBio:    instructorBio || '',
       certificateIncluded: certificateIncluded === 'true' || certificateIncluded === true,
-      lessons: processedLessons,
-      batches: parsedBatches,
-      status: 'pending',
+      lessons:  processedLessons,
+      batches:  parsedBatches,
+      status:   'pending',
     });
 
     logger.info('Course created', { courseId: course._id, vendorId, title: course.title });
@@ -154,7 +212,6 @@ export const createCourse = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Handles the 2-hour throw from processedLessons
     if (error.message?.includes('video cannot exceed')) {
       res.status(400).json({ success: false, message: error.message });
       return;
@@ -301,12 +358,51 @@ export const updateCourse = async (req: Request, res: Response): Promise<void> =
       updateData.imageUrl = `/uploads/courses/thumbnails/${thumbnailFile.filename}`;
     }
 
-    // Parse JSON fields
-    ['whatYouWillLearn', 'requirements', 'courseFormat', 'lessons', 'batches'].forEach(field => {
-      if (updateData[field] && typeof updateData[field] === 'string') {
-        try { updateData[field] = JSON.parse(updateData[field]); } catch {}
-      }
-    });
+    // ── THE FIX also applies to updateCourse ─────────────────
+    // If lessons are being updated with new files, apply same
+    // separate-counter logic.
+    if (updateData.lessons) {
+      const lessonsRaw = updateData.lessons;
+      const lessonsArray: any[] = typeof lessonsRaw === 'string'
+        ? JSON.parse(lessonsRaw)
+        : (Array.isArray(lessonsRaw) ? lessonsRaw : [lessonsRaw]);
+
+      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+      const videoFiles = files?.['lessonVideo'] || [];
+      const pdfFiles   = files?.['lessonPdf']   || [];
+
+      let videoIndex = 0;
+      let pdfIndex   = 0;
+
+      updateData.lessons = lessonsArray.map((lesson: any, index: number) => {
+        const contentType: string = lesson.contentType || 'video';
+        let contentUrl = lesson.contentUrl || '';
+
+        if (contentType === 'video') {
+          const videoFile = videoFiles[videoIndex];
+          if (videoFile) {
+            contentUrl = `/uploads/courses/videos/${videoFile.filename}`;
+          }
+          videoIndex++;
+        } else if (contentType === 'pdf') {
+          const pdfFile = pdfFiles[pdfIndex];
+          if (pdfFile) {
+            contentUrl = `/uploads/courses/pdfs/${pdfFile.filename}`;
+          }
+          pdfIndex++;
+        }
+        // article: contentUrl stays as-is
+
+        return { ...lesson, contentType, contentUrl, orderIndex: index };
+      });
+    } else {
+      // Parse other JSON fields normally
+      ['whatYouWillLearn', 'requirements', 'courseFormat', 'batches'].forEach(field => {
+        if (updateData[field] && typeof updateData[field] === 'string') {
+          try { updateData[field] = JSON.parse(updateData[field]); } catch {}
+        }
+      });
+    }
 
     const updatedCourse = await Course.findByIdAndUpdate(id, updateData, {
       new: true,
@@ -449,7 +545,7 @@ export const addBatch = async (req: Request, res: Response): Promise<void> => {
       seatsTotal: parseInt(seatsTotal),
       seatsRemaining: parseInt(seatsTotal),
       schedule,
-      status: 'upcoming',
+      status: 'open',
     } as any);
 
     await course.save();

@@ -1,12 +1,15 @@
 import { Router } from 'express';
 import { protect } from '../middleware/auth.middleware';
-import { initiatePayment, verifyPayment, getPaymentStatus, initiateCoursePayment } from '../controllers/payment.controller';
+import { initiatePayment, verifyPayment, getPaymentStatus, initiateCoursePayment, verifyCoursePayment, paymentSuccess, paymentFailure } from '../controllers/payment.controller';
 
 const router = Router();
 
 router.post('/initiate', protect, initiatePayment);
-router.get('/verify', verifyPayment); // public — eSewa redirects here
+router.post('/verify', verifyPayment);
 router.get('/status/:type/:id', protect, getPaymentStatus);
 router.post('/course/initiate', protect, initiateCoursePayment);
+router.post('/course/verify', verifyCoursePayment);
+router.get('/success', paymentSuccess);
+router.get('/failure', paymentFailure);
 
 export default router;

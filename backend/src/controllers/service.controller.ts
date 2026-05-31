@@ -127,14 +127,7 @@ export const getMyServices = async (req: Request, res: Response): Promise<void> 
       count: services.length,
     });
 
-    res.status(200).json({
-      success: true,
-      count: services.length,
-      total: totalServices,
-      page,
-      totalPages,
-      data: services,
-    });
+    res.json({ success: true, services });
   } catch (error: any) {
     logger.error('Get my services error:', error);
     res.status(500).json({
