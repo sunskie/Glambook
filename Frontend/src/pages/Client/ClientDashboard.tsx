@@ -123,21 +123,9 @@ const ClientDashboard: React.FC = () => {
                   Your journey to beauty and professional excellence starts here.
                 </p>
                 <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                  <div style={{ borderRadius: '9999px', backgroundColor: 'rgba(255, 255, 255, 0.2)', backdropFilter: 'blur(12px)', padding: '6px 16px', fontSize: '14px', fontWeight: 500, border: '1px solid rgba(255, 255, 255, 0.3)' }}>
-                    Member Since Oct 2023
-                  </div>
-                  <div style={{ borderRadius: '9999px', backgroundColor: 'rgba(255, 255, 255, 0.2)', backdropFilter: 'blur(12px)', padding: '6px 16px', fontSize: '14px', fontWeight: 500, border: '1px solid rgba(255, 255, 255, 0.3)' }}>
-                    {loyaltyData?.points || 0} Loyalty Points
-                  </div>
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <div style={{ width: '96px', height: '96px', borderRadius: '50%', border: '4px solid rgba(255, 255, 255, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '24px', fontWeight: 700 }}>5%</span>
-                </div>
-                <p style={{ fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255, 255, 255, 0.7)', margin: 0 }}>
-                  Next Tier: Gold
-                </p>
               </div>
             </div>
           </div>

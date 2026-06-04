@@ -287,7 +287,7 @@ const VendorCourseDashboard: React.FC = () => {
                   color: '#111',
                   fontFamily: 'Montserrat, sans-serif'
                 }}>
-                  ${stats.totalRevenue.toLocaleString()}
+                  Rs.{stats.totalRevenue.toLocaleString()}
                 </p>
               </div>
               <div style={{
@@ -519,7 +519,7 @@ const VendorCourseDashboard: React.FC = () => {
                           color: '#4CAF50',
                           fontFamily: 'Montserrat, sans-serif'
                         }}>
-                          ${course.discountPrice || course.price}
+                          Rs. {course.discountPrice || course.price}
                         </div>
                         <div style={{
                           fontSize: '11px',

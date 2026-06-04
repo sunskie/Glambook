@@ -200,7 +200,7 @@ const MyCourses = () => {
                   }}>
                     <div style={{
                       position: 'absolute' as const, inset: 0,
-                      background: 'linear-gradient(135deg, #FFF0F5, #FBCFE8)',
+                      background: 'linear-gradient(135deg, #FFF0F5, #3721c5)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: '48px', zIndex: 0,
                     }}>🎓</div>
